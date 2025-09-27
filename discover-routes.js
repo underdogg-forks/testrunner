@@ -7,13 +7,18 @@ const fs = require('fs');
  */
 class RouteDiscovery {
     constructor(baseUrl, options = {}) {
-        // Normalize base URL (e.g., http://locahost:3000/)
+        // Normalize base URL (e.g., http://locahost:3000)
         this.baseUrl = baseUrl.replace(/\/$/, '');
         this.options = {
             // Configuration moved here for clarity
             loginUrl: '/sessions/login',
             email: 'a@a.com',
             password: 'demopassword',
+            // --- New: Configurable login selectors ---
+            emailSelector: 'input[name="email"], input[id="email"]',
+            passwordSelector: 'input[name="password"], input[id="password"]',
+            submitSelector: 'button[type="submit"], input[type="submit"]',
+            // ----------------------------------------
             ...options
         };
         this.discoveredRoutes = [];
@@ -55,6 +60,21 @@ class RouteDiscovery {
         
         console.log(`\nDiscovered ${routes.length} unique routes.`);
 
+        // --- New: Log discovered routes by module ---
+        const moduleGroups = this.groupByModule(routes);
+
+        console.log(`\n\x1b[35m--- Routes by Module ---\x1b[0m`);
+        for (const [module, moduleRoutes] of Object.entries(moduleGroups)) {
+            // Only log non-AJAX routes for simplicity
+            const accessibleRoutes = moduleRoutes.filter(r => r.type !== 'ajax'); 
+            if (accessibleRoutes.length > 0) {
+                console.log(`\x1b[36m${module} (${accessibleRoutes.length} accessible routes):\x1b[0m`);
+                accessibleRoutes.forEach(r => console.log(`  - [${r.type.toUpperCase()}] ${r.url.replace(this.baseUrl, '') || '/'}`));
+            }
+        }
+        console.log(`\x1b[35m------------------------\x1b[0m`);
+        // ------------------------------------------
+
         await this.generateTests(routes);
         
         return routes;
@@ -66,15 +86,15 @@ class RouteDiscovery {
     
     async login(page) {
         try {
-            // Use config options for login path and credentials
+            // Use config options for login path and selectors
             await page.goto(`${this.baseUrl}${this.options.loginUrl}`, { waitUntil: 'domcontentloaded' });
-            await page.fill('input[name="email"]', this.options.email);
-            await page.fill('input[name="password"]', this.options.password);
+            await page.fill(this.options.emailSelector, this.options.email);
+            await page.fill(this.options.passwordSelector, this.options.password);
             
             // New: Improved Promise.all with a generous timeout
             await Promise.all([
                 page.waitForNavigation({ timeout: 30000 }),
-                page.click('button[type="submit"], input[type="submit"]')
+                page.click(this.options.submitSelector)
             ]);
 
             // New: Basic check if login was successful
@@ -101,9 +121,14 @@ class RouteDiscovery {
         while (toVisit.length > 0 && crawledCount < maxCrawlDepth) {
             const url = toVisit.pop();
             
-            // New: Normalize URL to ignore query parameters and trailing slashes for comparison
-            const cleanUrl = url.split('?')[0].replace(/\/$/, (url === this.baseUrl ? '' : '/'));
+            // --- Improved URL normalization ---
+            let cleanUrl = url.split('?')[0];
+            // Remove trailing slash, unless it's the base URL
+            if (cleanUrl.endsWith('/') && cleanUrl !== this.baseUrl) {
+                cleanUrl = cleanUrl.slice(0, -1);
+            }
             if (visited.has(cleanUrl)) continue;
+            // ----------------------------------
             
             visited.add(cleanUrl);
             crawledCount++;
@@ -129,10 +154,15 @@ class RouteDiscovery {
                         // Use the new filter
                         !linkFilter.test(link)
                     ) {
-                        const nextUrl = link.split('?')[0].replace(/\/$/, (link === this.baseUrl ? '' : '/'));
+                        // --- Improved Link Normalization ---
+                        let nextUrl = link.split('?')[0];
+                        if (nextUrl.endsWith('/') && nextUrl !== this.baseUrl) {
+                            nextUrl = nextUrl.slice(0, -1);
+                        }
                         if (!visited.has(nextUrl)) {
                             toVisit.push(nextUrl);
                         }
+                        // ------------------------------------
                     }
                 });
                 
@@ -226,13 +256,13 @@ beforeAll(async () => {
   
   // Login once for all tests, using config variables
   await page.goto(\`\${BASE_URL}${this.options.loginUrl}\`);
-  await page.fill('input[name="email"]', '${this.options.email}');
-  await page.fill('input[name="password"]', '${this.options.password}');
+  await page.fill('${this.options.emailSelector}', '${this.options.email}');
+  await page.fill('${this.options.passwordSelector}', '${this.options.password}');
   
   // New: Better wait condition for navigation (wait for URL to change away from login)
   await Promise.all([
     page.waitForURL(url => !url.includes('${this.options.loginUrl}')),
-    page.click('button[type="submit"], input[type="submit"]')
+    page.click('${this.options.submitSelector}')
   ]);
   
   global.page = page;
@@ -279,12 +309,12 @@ async function globalSetup() {
   
   // Login
   await page.goto('${this.baseUrl}${this.options.loginUrl}');
-  await page.fill('input[name="email"]', '${this.options.email}');
-  await page.fill('input[name="password"]', '${this.options.password}');
+  await page.fill('${this.options.emailSelector}', '${this.options.email}');
+  await page.fill('${this.options.passwordSelector}', '${this.options.password}');
   
   await Promise.all([
     page.waitForURL(url => !url.includes('${this.options.loginUrl}')),
-    page.click('button[type="submit"], input[type="submit"]')
+    page.click('${this.options.submitSelector}')
   ]);
   
   // Save authentication state to be used in all tests
@@ -337,19 +367,23 @@ ${tests}
     await page.goto('${relativeUrl}');
     
     // New: Better selector to exclude hidden/submit/button inputs
-    const inputs = await page.$$('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea');
+    const inputs = await page.$$('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([readonly]), textarea:not([readonly])');
     
     for (const input of inputs) {
       const name = await input.getAttribute('name');
       if (name) { // Skip inputs without a name
-        await input.fill(\`Test \${name} \${Date.now()}\`);
+        // Avoid filling disabled/checked inputs
+        const type = (await input.getAttribute('type') || '').toLowerCase();
+        if (type !== 'checkbox' && type !== 'radio') {
+            await input.fill(\`Test \${name} \${Date.now()}\`);
+        }
       }
     }
     
     // Submit form and wait for navigation
     await Promise.all([
       page.waitForNavigation({ timeout: 15000 }),
-      page.click('button[type="submit"], input[type="submit"]')
+      page.click('${this.options.submitSelector}')
     ]);
     
     // New: Included common Filament success selector
@@ -382,26 +416,30 @@ ${tests}
     // Use test.step for cleaner reporting
     await test.step('Navigate to form', async () => {
       await page.goto('${relativeUrl}');
-      await page.waitForSelector('form');
+      await page.waitForSelector('form', { timeout: 10000 });
     });
 
     await test.step('Fill and Submit Form', async () => {
       // Better locator for form inputs
-      const inputs = page.locator('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea');
+      const inputs = page.locator('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([readonly]), textarea:not([readonly])');
       const count = await inputs.count();
       
       for (let i = 0; i < count; i++) {
         const input = inputs.nth(i);
         const name = await input.getAttribute('name');
         if (name) {
-          await input.fill(\`Test \${name} \${Date.now()}\`);
+            const type = await input.getAttribute('type') || '';
+            // Only fill text-like fields
+            if (!['checkbox', 'radio'].includes(type.toLowerCase())) {
+                await input.fill(\`Test \${name} \${Date.now()}\`);
+            }
         }
       }
       
       await Promise.all([
         // Wait for URL change (assuming a redirect on success)
         page.waitForURL(url => !url.includes('${relativeUrl}')), 
-        page.click('button[type="submit"], input[type="submit"]')
+        page.click('${this.options.submitSelector}')
       ]);
     });
 
@@ -422,23 +460,37 @@ ${tests}
   });`;
     }
     
+    // --- Improved generateTestName for clearer Form names ---
     generateTestName(route) {
-        // New: Added module name to the test name for better context in reports
+        // Remove base URL, remove leading slash
         const path = route.url.replace(this.baseUrl, '').replace(/^\//, '');
+        // Split by segment, filtering out empty strings and numbers
         const segments = path.split('/').filter(s => s && !s.match(/^\d+$/));
         
+        // Use the module name in the test name for better context
+        const moduleContext = `[${route.module}]`;
+
         switch (route.type) {
             case 'form':
-                return path.match(/\/\d+$/) ? 
-                    `can edit ${segments[0]} [${route.module}]` : 
-                    `can create ${segments[0]} [${route.module}]`;
+                // Check if path contains typical 'edit' keywords or ends with an ID
+                if (path.includes('/edit') || route.url.match(/\/\d+$/)) { 
+                    return `can edit ${segments[0]} ${moduleContext}`;
+                }
+                // Check if path contains typical 'create/new' keywords
+                if (path.includes('/new') || path.includes('/create')) {
+                    return `can create ${segments[0]} ${moduleContext}`;
+                }
+                return `can use form on ${segments.join(' ') || 'homepage'} ${moduleContext}`;
+
             case 'view':
-                return `can view ${segments.join(' ')} [${route.module}]`;
-            default:
-                return `can access ${segments.join(' ') || 'homepage'} [${route.module}]`;
+                return `can view ${segments.join(' ') || 'record'} ${moduleContext}`;
+
+            default: // index type
+                return `can access ${segments.join(' ') || 'homepage'} ${moduleContext}`;
         }
     }
-}
+    // --------------------------------------------------------
+}  // end of class maybe?
 
 // Usage
 async function main() {
@@ -448,7 +500,12 @@ async function main() {
     const options = {
         email: process.env.TEST_EMAIL || 'a@a.com',
         password: process.env.TEST_PASSWORD || 'demopassword',
-        browserOptions: { headless: process.env.HEADLESS !== 'false' }
+        browserOptions: { headless: process.env.HEADLESS !== 'false' },
+        // --- Added environment variable for custom login selectors ---
+        emailSelector: process.env.EMAIL_SELECTOR,
+        passwordSelector: process.env.PASSWORD_SELECTOR,
+        submitSelector: process.env.SUBMIT_SELECTOR,
+        loginUrl: process.env.LOGIN_URL
     };
 
     const discovery = new RouteDiscovery(baseUrl, options);
@@ -475,4 +532,3 @@ if (require.main === module) {
 }
 
 module.exports = { RouteDiscovery };
-
