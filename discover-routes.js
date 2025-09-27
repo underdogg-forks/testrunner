@@ -1,9 +1,12 @@
-const { chromium } = require('playwright');
+const { chromium, errors } = require('playwright');
 const fs = require('fs');
 
 /**
  * A class to launch a browser, crawl an application, discover routes,
  * and automatically generate boilerplate Jest and Playwright E2E tests.
+ * * IMPROVEMENT: This version is adapted for Laravel Filament (Livewire-based) 
+ * by simulating clicks and monitoring URL changes via the History API,
+ * instead of relying on traditional a[href] and page.goto().
  */
 class RouteDiscovery {
     constructor(baseUrl, options = {}) {
@@ -33,15 +36,24 @@ class RouteDiscovery {
         let context;
         try {
             // Launch in headless mode by default for speed, but allow options to override
-            // New: Added this.options.browserOptions for configurability
             browser = await chromium.launch({ headless: true, ...this.options.browserOptions });
-            context = await browser.newContext();
+            // Set a global default timeout for all Playwright operations
+            context = await browser.newContext({
+                // Added a reasonable default timeout for navigation and actions
+                actionTimeout: 15000, 
+                navigationTimeout: 30000 
+            });
             const page = await context.newPage();
 
             await this.runDiscovery(page);
 
         } catch (error) {
-            console.error('\nFATAL ERROR during discovery process:', error.message);
+            // Added Playwright timeout error handling
+            if (error instanceof errors.TimeoutError) {
+                console.error('\nFATAL ERROR: Operation timed out. Check if the application is running and the BASE_URL is correct.');
+            } else {
+                console.error('\nFATAL ERROR during discovery process:', error.message);
+            }
         } finally {
             // Robustly ensure browser is closed
             if (browser) {
@@ -55,17 +67,16 @@ class RouteDiscovery {
         await this.login(page);
 
         console.log(`\nStarting route crawl from ${this.baseUrl}...`);
-        // The core crawling logic
+        
+        // Use the authenticated page to start crawling
         const routes = await this.crawlRoutes(page);
         
         console.log(`\nDiscovered ${routes.length} unique routes.`);
 
-        // --- New: Log discovered routes by module ---
+        // Log discovered routes (kept the improved logging from the previous version)
         const moduleGroups = this.groupByModule(routes);
-
         console.log(`\n\x1b[35m--- Routes by Module ---\x1b[0m`);
         for (const [module, moduleRoutes] of Object.entries(moduleGroups)) {
-            // Only log non-AJAX routes for simplicity
             const accessibleRoutes = moduleRoutes.filter(r => r.type !== 'ajax'); 
             if (accessibleRoutes.length > 0) {
                 console.log(`\x1b[36m${module} (${accessibleRoutes.length} accessible routes):\x1b[0m`);
@@ -73,8 +84,7 @@ class RouteDiscovery {
             }
         }
         console.log(`\x1b[35m------------------------\x1b[0m`);
-        // ------------------------------------------
-
+        
         await this.generateTests(routes);
         
         return routes;
@@ -86,18 +96,16 @@ class RouteDiscovery {
     
     async login(page) {
         try {
-            // Use config options for login path and selectors
             await page.goto(`${this.baseUrl}${this.options.loginUrl}`, { waitUntil: 'domcontentloaded' });
             await page.fill(this.options.emailSelector, this.options.email);
             await page.fill(this.options.passwordSelector, this.options.password);
             
-            // New: Improved Promise.all with a generous timeout
             await Promise.all([
-                page.waitForNavigation({ timeout: 30000 }),
+                // Wait for URL to change (away from the login URL)
+                page.waitForURL(url => !url.includes(this.options.loginUrl), { timeout: 30000 }),
                 page.click(this.options.submitSelector)
             ]);
 
-            // New: Basic check if login was successful
             if (page.url().includes(this.options.loginUrl)) {
                 console.warn('⚠️ Login failed or redirected back to login page. Crawling may fail.');
             } else {
@@ -107,19 +115,51 @@ class RouteDiscovery {
             console.error(`Error during login: ${error.message}`);
         }
     }
+
+    /**
+     * Helper function to click an element and wait for a URL change (Livewire/SPA style)
+     */
+    async waitAndClick(page, element) {
+        // Get the URL *before* the click
+        const initialUrl = page.url();
+        
+        try {
+            // Start waiting for the URL to change
+            const navigationPromise = page.waitForURL(url => url !== initialUrl, { timeout: 15000 });
+            
+            // Perform the click action
+            await element.click();
+
+            // Wait for the navigation to complete
+            await navigationPromise;
+            return page.url();
+
+        } catch (error) {
+            // Ignore timeout errors, as not every link click causes a URL change (e.g., modals, form buttons)
+            if (error instanceof errors.TimeoutError) {
+                return initialUrl; // Return the initial URL if no navigation happened
+            }
+            throw error;
+        }
+    }
     
     async crawlRoutes(page) {
         const routes = new Set();
         const visited = new Set();
-        const toVisit = [this.baseUrl];
+        // Use a set for toVisit to prevent duplicates before processing
+        const toVisit = new Set([this.baseUrl]); 
+        
         // New: Filter to ignore common static file extensions
         const linkFilter = /\.(css|js|png|jpg|gif|svg|ico|pdf|zip|xml)$/i; 
         
         let crawledCount = 0;
         const maxCrawlDepth = 500; 
 
-        while (toVisit.length > 0 && crawledCount < maxCrawlDepth) {
-            const url = toVisit.pop();
+        // Convert Set to Array for standard loop/pop behavior
+        const queue = Array.from(toVisit);
+
+        while (queue.length > 0 && crawledCount < maxCrawlDepth) {
+            const url = queue.pop();
             
             // --- Improved URL normalization ---
             let cleanUrl = url.split('?')[0];
@@ -134,6 +174,7 @@ class RouteDiscovery {
             crawledCount++;
 
             try {
+                // Navigate to the clean URL
                 await page.goto(cleanUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
                 
                 routes.add({
@@ -142,35 +183,59 @@ class RouteDiscovery {
                     module: this.extractModule(cleanUrl)
                 });
                 
-                // Find all links on the page
-                const links = await page.locator('a[href]').evaluateAll(elements => 
-                    elements.map(el => el.href)
-                );
+                // --- Filament/Livewire Crawling Strategy ---
+                // Look for links in common navigation areas
+                const linkSelector = 'aside a[href], nav a[href], .fi-sidebar-item, button, [wire:click]';
                 
-                links.forEach(link => {
-                    if (link.startsWith(this.baseUrl) && 
-                        !link.includes('#') && 
-                        !link.includes('javascript:') &&
-                        // Use the new filter
-                        !linkFilter.test(link)
-                    ) {
-                        // --- Improved Link Normalization ---
-                        let nextUrl = link.split('?')[0];
+                // Filter to only get elements that are actually links or sidebars items
+                const elements = await page.locator(linkSelector).all();
+
+                for (const element of elements) {
+                    const href = await element.getAttribute('href');
+                    const text = await element.textContent();
+
+                    let nextUrl = null;
+
+                    if (href && href.startsWith(this.baseUrl) && !linkFilter.test(href)) {
+                        // Standard link (e.g., Logout or external link)
+                        nextUrl = href.split('?')[0];
+                    } else if (await element.isVisible() && text && text.trim().length > 0) {
+                        // This is a Livewire component (e.g., fi-sidebar-item) - we must click it.
+                        try {
+                            const newUrl = await this.waitAndClick(page, element);
+                            if (newUrl !== cleanUrl && newUrl.startsWith(this.baseUrl)) {
+                                nextUrl = newUrl.split('?')[0];
+                                
+                                // Return to the original page for the next link in the loop
+                                await page.goto(cleanUrl); 
+                            }
+                        } catch (clickError) {
+                            // Suppress errors for non-navigation clicks (like modals)
+                        }
+                    }
+
+                    if (nextUrl) {
+                        // Normalize the discovered URL
                         if (nextUrl.endsWith('/') && nextUrl !== this.baseUrl) {
                             nextUrl = nextUrl.slice(0, -1);
                         }
-                        if (!visited.has(nextUrl)) {
-                            toVisit.push(nextUrl);
+                        if (!visited.has(nextUrl) && !toVisit.has(nextUrl)) {
+                            toVisit.add(nextUrl);
+                            queue.push(nextUrl); // Add to the queue for processing
                         }
-                        // ------------------------------------
                     }
-                });
+                }
                 
                 // Live progress bar for long crawls
                 process.stdout.write(`\rCrawled ${crawledCount} routes...`);
 
             } catch (error) {
-                console.log(`\nError crawling ${cleanUrl}:`, error.message.substring(0, 80) + '...');
+                // Log only non-timeout errors
+                if (!(error instanceof errors.TimeoutError)) {
+                    console.log(`\nError crawling ${cleanUrl}:`, error.message.substring(0, 80) + '...');
+                } else {
+                    console.log(`\nTimeout crawling ${cleanUrl}`);
+                }
             }
         }
         
@@ -178,15 +243,13 @@ class RouteDiscovery {
     }
     
     // =================================================================
-    // ROUTE ANALYSIS
+    // ROUTE ANALYSIS (No change needed here)
     // =================================================================
     
     determineRouteType(url) {
         const path = url.replace(this.baseUrl, '').toLowerCase();
-        // New: Added '/new' to form routes
         if (path.includes('/form') || path.includes('/create') || path.includes('/edit') || path.includes('/new')) return 'form';
         if (path.includes('/view') || path.match(/\/\d+$/)) return 'view';
-        // New: Added '/api/' for better AJAX detection
         if (path.includes('/ajax') || path.includes('.json') || path.includes('/api/')) return 'ajax';
         return 'index';
     }
@@ -206,7 +269,7 @@ class RouteDiscovery {
     }
 
     // =================================================================
-    // TEST GENERATION
+    // TEST GENERATION (Selectors updated for robustness)
     // =================================================================
 
     async generateTests(routes) {
@@ -232,12 +295,10 @@ class RouteDiscovery {
     }
 
     generateJestConfig() {
-        // ... Jest config generation logic is mostly the same
         const config = `module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/tests/**/*.test.js'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
-  // Increased timeout for Playwright operations
   testTimeout: 60000 
 };`;
         fs.writeFileSync('jest.config.js', config);
@@ -259,7 +320,6 @@ beforeAll(async () => {
   await page.fill('${this.options.emailSelector}', '${this.options.email}');
   await page.fill('${this.options.passwordSelector}', '${this.options.password}');
   
-  // New: Better wait condition for navigation (wait for URL to change away from login)
   await Promise.all([
     page.waitForURL(url => !url.includes('${this.options.loginUrl}')),
     page.click('${this.options.submitSelector}')
@@ -284,7 +344,6 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: 'html',
   use: {
-    // Inject the actual baseURL
     baseURL: '${this.baseUrl}',
     trace: 'on-first-retry',
   },
@@ -295,12 +354,10 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  // New: Added globalSetup to handle login and save authentication state
   globalSetup: require.resolve('./tests-playwright/global-setup.js'),
 });`;
         fs.writeFileSync('playwright.config.js', config);
 
-        // New: Playwright global-setup for login persistence (best practice)
         const globalSetup = `import { chromium } from '@playwright/test';
 
 async function globalSetup() {
@@ -332,11 +389,9 @@ export default globalSetup;`;
     // =================================================================
     
     generateJestTestFile(module, routes) {
-        // Filter out 'ajax' routes as they don't usually load a full page
         const tests = routes.filter(r => r.type !== 'ajax').map(route => this.generateJestTest(route)).join('\n\n');
         
         return `describe('${module} module', () => {
-  // 'page' is available globally from tests/setup.js
   const page = global.page; 
 
 ${tests}
@@ -358,35 +413,35 @@ ${tests}
     
     generateJestTest(route) {
         const testName = this.generateTestName(route);
-        // Use relative URL (Playwright automatically prepends baseURL)
         const relativeUrl = route.url.replace(this.baseUrl, ''); 
         
         if (route.type === 'form') {
             return `  test('${testName}', async () => {
-    // Navigate to form page
+    // Navigate to form page and wait for Livewire component to load
     await page.goto('${relativeUrl}');
+    await page.waitForLoadState('networkidle');
     
-    // New: Better selector to exclude hidden/submit/button inputs
-    const inputs = await page.$$('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([readonly]), textarea:not([readonly])');
+    // Selector updated to exclude disabled/readonly fields
+    const inputs = await page.$$('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled])');
     
     for (const input of inputs) {
       const name = await input.getAttribute('name');
-      if (name) { // Skip inputs without a name
-        // Avoid filling disabled/checked inputs
+      if (name) {
         const type = (await input.getAttribute('type') || '').toLowerCase();
-        if (type !== 'checkbox' && type !== 'radio') {
+        if (type !== 'checkbox' && type !== 'radio' && type !== 'file') {
             await input.fill(\`Test \${name} \${Date.now()}\`);
         }
       }
     }
     
-    // Submit form and wait for navigation
+    // Submit form and wait for navigation (Filament often redirects on success)
     await Promise.all([
-      page.waitForNavigation({ timeout: 15000 }),
+      // Wait for URL change away from the form URL
+      page.waitForURL(url => !url.includes('${relativeUrl}'), { timeout: 15000 }), 
       page.click('${this.options.submitSelector}')
     ]);
     
-    // New: Included common Filament success selector
+    // Check for Filament success notification
     const hasSuccess = await page.$('.alert-success, .success-message, .filament-notifications-body') !== null;
     expect(hasSuccess).toBe(true);
   });`;
@@ -396,12 +451,14 @@ ${tests}
     // Basic page access test
     await page.goto('${relativeUrl}');
     
-    await page.waitForLoadState('domcontentloaded');
+    // Wait for Livewire components/content to settle
+    await page.waitForLoadState('networkidle');
     
     // Assert title exists and content body has substantial text
     const title = await page.title();
     expect(title).toBeTruthy();
     
+    // Check for substantial body text (good for Livewire content)
     const bodyText = await page.textContent('body', { timeout: 5000 });
     expect(bodyText.length).toBeGreaterThan(100);
   });`;
@@ -413,15 +470,14 @@ ${tests}
         
         if (route.type === 'form') {
             return `  test('${testName}', async ({ page }) => {
-    // Use test.step for cleaner reporting
     await test.step('Navigate to form', async () => {
       await page.goto('${relativeUrl}');
       await page.waitForSelector('form', { timeout: 10000 });
     });
 
     await test.step('Fill and Submit Form', async () => {
-      // Better locator for form inputs
-      const inputs = page.locator('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([readonly]), textarea:not([readonly])');
+      // Selector updated to exclude disabled/readonly fields
+      const inputs = page.locator('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled])');
       const count = await inputs.count();
       
       for (let i = 0; i < count; i++) {
@@ -430,7 +486,7 @@ ${tests}
         if (name) {
             const type = await input.getAttribute('type') || '';
             // Only fill text-like fields
-            if (!['checkbox', 'radio'].includes(type.toLowerCase())) {
+            if (!['checkbox', 'radio', 'file'].includes(type.toLowerCase())) {
                 await input.fill(\`Test \${name} \${Date.now()}\`);
             }
         }
@@ -438,18 +494,21 @@ ${tests}
       
       await Promise.all([
         // Wait for URL change (assuming a redirect on success)
-        page.waitForURL(url => !url.includes('${relativeUrl}')), 
+        page.waitForURL(url => !url.includes('${relativeUrl}'), { timeout: 15000 }), 
         page.click('${this.options.submitSelector}')
       ]);
     });
 
-    // New: Use Playwright's stronger assertion to wait for visibility
+    // Use Playwright's stronger assertion to wait for visibility of Filament success notification
     await expect(page.locator('.alert-success, .success-message, .filament-notifications-body')).toBeVisible();
   });`;
         }
         
         return `  test('${testName}', async ({ page }) => {
     await page.goto('${relativeUrl}');
+    
+    // Wait for Livewire components/content to settle
+    await page.waitForLoadState('networkidle');
     
     // Basic page load verification
     await expect(page).toHaveTitle(/.+/);
@@ -460,23 +519,17 @@ ${tests}
   });`;
     }
     
-    // --- Improved generateTestName for clearer Form names ---
     generateTestName(route) {
-        // Remove base URL, remove leading slash
         const path = route.url.replace(this.baseUrl, '').replace(/^\//, '');
-        // Split by segment, filtering out empty strings and numbers
         const segments = path.split('/').filter(s => s && !s.match(/^\d+$/));
         
-        // Use the module name in the test name for better context
         const moduleContext = `[${route.module}]`;
 
         switch (route.type) {
             case 'form':
-                // Check if path contains typical 'edit' keywords or ends with an ID
                 if (path.includes('/edit') || route.url.match(/\/\d+$/)) { 
                     return `can edit ${segments[0]} ${moduleContext}`;
                 }
-                // Check if path contains typical 'create/new' keywords
                 if (path.includes('/new') || path.includes('/create')) {
                     return `can create ${segments[0]} ${moduleContext}`;
                 }
@@ -485,23 +538,20 @@ ${tests}
             case 'view':
                 return `can view ${segments.join(' ') || 'record'} ${moduleContext}`;
 
-            default: // index type
+            default:
                 return `can access ${segments.join(' ') || 'homepage'} ${moduleContext}`;
         }
     }
-    // --------------------------------------------------------
-}  // end of class maybe?
+}
 
 // Usage
 async function main() {
     const baseUrl = process.argv[2] || 'http://localhost:3000';
     
-    // New: Allows configuration via environment variables
     const options = {
         email: process.env.TEST_EMAIL || 'a@a.com',
         password: process.env.TEST_PASSWORD || 'demopassword',
         browserOptions: { headless: process.env.HEADLESS !== 'false' },
-        // --- Added environment variable for custom login selectors ---
         emailSelector: process.env.EMAIL_SELECTOR,
         passwordSelector: process.env.PASSWORD_SELECTOR,
         submitSelector: process.env.SUBMIT_SELECTOR,
@@ -510,8 +560,7 @@ async function main() {
 
     const discovery = new RouteDiscovery(baseUrl, options);
     
-    // New: Added basic ANSI color codes for console output
-    console.log(`\n\x1b[34m--- Route Discovery Tool ---\x1b[0m`);
+    console.log(`\n\x1b[34m--- Filament Route Discovery Tool ---\x1b[0m`);
     console.log(`\x1b[33mBase URL:\x1b[0m ${baseUrl}`);
     
     await discovery.discover();
