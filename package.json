@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "discover": "node discover-routes.js",
+    "disc-phpunit": "node discover-phpunit.js",
     "test:jest": "jest",
     "test:playwright": "playwright test"
   },
