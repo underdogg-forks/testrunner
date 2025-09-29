@@ -4,7 +4,8 @@
   "scripts": {
     "discover": "node discover-routes.js",
     "disc-phpunit": "node discover-phpunit.js",
-    "record": "node record-clicks.js"
+    "record": "node record-routes.js",
+    "playback": "node playback.js"
     "test:jest": "jest",
     "test:playwright": "playwright test"
   },
