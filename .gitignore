@@ -1,0 +1,23 @@
+# Recordings directory
+recordings/
+
+# Generated test directories
+tests/
+tests-playwright/
+
+# Node modules
+node_modules/
+
+# Storage logs
+storage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
