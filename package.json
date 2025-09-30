@@ -2,7 +2,7 @@
   "name": "route-discovery",
   "version": "1.0.0",
   "scripts": {
-    "record": "node record-advanced.js",
+    "record": "node advanced-recording.js",
     "playback": "node playback.js",
     "convert:phpunit": "node convert-to-phpunit.js",
     "convert:playwright": "node convert-to-playwright.js",
