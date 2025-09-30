@@ -5,11 +5,11 @@ const path = require('path');
  * Converts a recorded session to PHPUnit test format
  * 
  * This script takes the JSON recording from advanced-recording.js and generates
- * PHPUnit Feature tests with:
- * - HTTP requests for navigation
- * - Form submissions with actual data
- * - Response assertions
- * - Proper test structure with test methods
+ * a complete PHPUnit Feature test file with:
+ * - HTTP GET requests for route navigation
+ * - POST/PUT requests for form submissions
+ * - Assertions based on recorded interactions
+ * - Proper test structure following Laravel conventions
  * 
  * @usage
  * npm run convert:phpunit recordings/session-[timestamp].json
@@ -24,7 +24,7 @@ const path = require('path');
  * @param {string} outputFile - Path where the test file should be saved
  */
 function convertToPHPUnit(recordingFile, outputFile) {
-  console.log(`\n🔄 Converting ${recordingFile} to PHPUnit test...\n`);
+  console.log(`\nConverting ${recordingFile} to PHPUnit test...\n`);
   
   // ============================================================
   // LOAD RECORDING DATA
@@ -34,14 +34,14 @@ function convertToPHPUnit(recordingFile, outputFile) {
   
   // ============================================================
   // GENERATE TEST FILE HEADER
-  // ============================================================
-  
+  // ============================================================ 
   const className = 'GeneratedTest' + new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
-  
+
   let testCode = `<?php
 
 namespace Tests\\Feature;
 
+use App\\Models\\User;
 use Illuminate\\Foundation\\Testing\\RefreshDatabase;
 use Tests\\TestCase;
 
@@ -63,6 +63,32 @@ class ${className} extends TestCase
 
   // ============================================================
   // BUILD TEST METHODS
+class GeneratedRecordedSessionTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected User $user;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        
+        // Create an authenticated user for the tests
+        // Adjust the factory call based on your User model setup
+        $this->user = User::factory()->create();
+    }
+
+    /**
+     * Test the recorded user session
+     *
+     * @return void
+     */
+    public function test_recorded_user_session(): void
+    {
+`;
+
+  // ============================================================
+  // BUILD TEST STEPS
   // ============================================================
   
   /**
@@ -70,7 +96,7 @@ class ${className} extends TestCase
    * This ensures actions happen in the correct order
    */
   const timeline = buildTimeline(session);
-  
+
   let testMethodCounter = 1;
   let currentUrl = '';
   let formDataBuffer = {};
@@ -108,6 +134,57 @@ class ${className} extends TestCase
   // ============================================================
   
   testCode += `}
+
+  let currentUrl = '';
+  let stepCounter = 1;
+  let formDataBuffer = {}; // Store form data until submission
+  
+  for (const event of timeline) {
+    switch (event.type) {
+      case 'route':
+        // Generate HTTP GET request for route navigation
+        if (event.to !== currentUrl) {
+          testCode += generateRouteStep(event, stepCounter);
+          currentUrl = event.to;
+          stepCounter++;
+        }
+        break;
+        
+      case 'click':
+        // Some clicks trigger navigation or form submission
+        // We'll add them as comments for context
+        testCode += generateClickComment(event, stepCounter);
+        stepCounter++;
+        break;
+        
+      case 'formData':
+        if (event.data.type === 'form-submission') {
+          // Generate POST/PUT request with all form data
+          testCode += generateFormSubmissionStep(event, session, stepCounter);
+          formDataBuffer = {}; // Clear buffer after submission
+          stepCounter++;
+        } else {
+          // Store form field data for later submission
+          const fieldName = event.data.name || event.data.id;
+          if (fieldName) {
+            formDataBuffer[fieldName] = event.data.value;
+          }
+        }
+        break;
+        
+      case 'network':
+        // Add network request verification as comments
+        testCode += generateNetworkComment(event, stepCounter);
+        break;
+    }
+  }
+  
+  // ============================================================
+  // CLOSE TEST STRUCTURE
+  // ============================================================
+  
+  testCode += `    }
+}
 `;
 
   // ============================================================
@@ -116,9 +193,9 @@ class ${className} extends TestCase
   
   fs.writeFileSync(outputFile, testCode);
   
-  console.log(`✅ PHPUnit test generated successfully!`);
-  console.log(`📄 File: ${outputFile}`);
-  console.log(`\n▶️  Run with: php artisan test ${outputFile}\n`);
+  console.log(`PHPUnit test generated successfully!`);
+  console.log(`File: ${outputFile}`);
+  console.log(`\nRun with: php artisan test ${outputFile}\n`);
 }
 
 /**
@@ -212,6 +289,61 @@ function generateTestMethod(methodName, group, session) {
   }
   
   code += `    }\n\n`;
+ * Generates code for a route navigation step
+ */
+function generateRouteStep(event, step) {
+  const url = new URL(event.to);
+  const path = url.pathname;
+  
+  return `        // Step ${step}: Navigate to ${path}
+        $response = $this->actingAs($this->user)->get('${path}');
+        $response->assertStatus(200);
+
+`;
+}
+
+/**
+ * Generates a comment for click interactions
+ */
+function generateClickComment(event, step) {
+  const comment = event.text ? `Click "${event.text}"` : `Click ${event.tagName}`;
+  
+  return `        // Step ${step}: ${comment}
+`;
+}
+
+/**
+ * Generates code for a complete form submission
+ */
+function generateFormSubmissionStep(event, session, step) {
+  const url = new URL(event.data.url);
+  const path = url.pathname;
+  const method = (event.data.method || 'post').toLowerCase();
+  const phpMethod = method === 'get' ? 'get' : (method === 'put' || method === 'patch' ? 'put' : 'post');
+  
+  let code = `        // Step ${step}: Submit form to ${path}
+`;
+  
+  // Generate the form data array
+  if (event.data.data && Object.keys(event.data.data).length > 0) {
+    code += `        $formData = [\n`;
+    
+    for (const [key, value] of Object.entries(event.data.data)) {
+      const escapedValue = escapePhpValue(value);
+      code += `            '${key}' => ${escapedValue},\n`;
+    }
+    
+    code += `        ];\n\n`;
+    code += `        $response = $this->actingAs($this->user)->${phpMethod}('${path}', $formData);\n`;
+  } else {
+    code += `        $response = $this->actingAs($this->user)->${phpMethod}('${path}');\n`;
+  }
+  
+  code += `        $response->assertSessionHasNoErrors();
+        // Adjust the assertion below based on expected behavior (redirect, status, etc.)
+        $response->assertStatus(302); // Typically redirects after form submission
+
+`;
   
   return code;
 }
@@ -234,11 +366,39 @@ function sanitizeMethodName(path) {
  */
 function escapePhpString(str) {
   return String(str)
+ * Generates a comment for network requests
+ */
+function generateNetworkComment(event, step) {
+  return `        // Step ${step}: ${event.method} request to ${event.url}
+        // Status: ${event.response?.status || 'pending'}
+`;
+}
+
+/**
+ * Escapes and formats values for PHP
+ */
+function escapePhpValue(value) {
+  if (value === null || value === undefined) {
+    return 'null';
+  }
+  
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+  
+  if (typeof value === 'number') {
+    return String(value);
+  }
+  
+  // String values need to be escaped
+  const escapedValue = String(value)
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'")
     .replace(/\n/g, '\\n')
     .replace(/\r/g, '\\r')
     .replace(/\t/g, '\\t');
+
+  return `'${escapedValue}'`;
 }
 
 // ============================================================
@@ -263,9 +423,9 @@ if (require.main === module) {
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
   const outputDir = 'tests/Feature';
   fs.mkdirSync(outputDir, { recursive: true });
-  const outputFile = path.join(outputDir, `GeneratedTest${timestamp}.php`);
-  
-  convertToPHPUnit(recordingFile, outputFile);
+  const outputFile = path.join(outputDir, `GeneratedTest${timestamp}.php`); 
+
+  convertToPhpUnit(recordingFile, outputFile);
 }
 
-module.exports = { convertToPHPUnit };
+module.exports = { convertToPhpUnit };

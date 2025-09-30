@@ -19,10 +19,25 @@ Thumbs.db
 # IDE files
 .vscode/
 .idea/
+# Recordings directory
+recordings/
+
+# Generated test directories
+tests/
+tests-playwright/
+
+# Node modules
+node_modules/
+
+# Storage logs
+storage/
+
+# IDE
+.idea/
+.vscode/
 *.swp
 *.swo
 *~
-
 # Logs
 *.log
 npm-debug.log*
@@ -33,3 +48,6 @@ yarn-error.log*
 *.tmp
 .temp/
 tmp/
+# OS
+.DS_Store
+Thumbs.db
