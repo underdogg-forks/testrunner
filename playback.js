@@ -1,5 +1,6 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
+const { buildTimeline } = require('./utils');
 
 /**
  * Playback recorded sessions
@@ -36,25 +37,8 @@ const fs = require('fs');
     // New format: session object with timeline
     startUrl = recording.metadata.startUrl;
     
-    // Build timeline from session
-    const timeline = [];
-    
-    recording.routes?.forEach(route => {
-      timeline.push({ type: 'route', ...route });
-    });
-    
-    recording.clicks?.forEach(click => {
-      timeline.push({ type: 'click', ...click });
-    });
-    
-    recording.formData?.forEach(form => {
-      timeline.push({ type: 'formData', data: form, timestamp: form.timestamp });
-    });
-    
-    // Sort by timestamp
-    timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    
-    events = timeline;
+    // Build timeline from session using shared utility
+    events = buildTimeline(recording);
     
     console.log('📼 Playing back advanced recording...\n');
     console.log(`Recording from: ${recording.metadata.startTime}`);

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { buildTimeline, sanitizeMethodName, escapePhpString, escapePhpValue } = require('./utils');
 
 /**
  * Converts a recorded session to PHPUnit test format
@@ -23,8 +24,8 @@ const path = require('path');
  * @param {string} recordingFile - Path to the recording JSON file
  * @param {string} outputFile - Path where the test file should be saved
  */
-function convertToPHPUnit(recordingFile, outputFile) {
-  console.log(`\nConverting ${recordingFile} to PHPUnit test...\n`);
+function convertToPhpUnit(recordingFile, outputFile) {
+  console.log(`\n🔄 Converting ${recordingFile} to PHPUnit test...\n`);
   
   // ============================================================
   // LOAD RECORDING DATA
@@ -59,12 +60,6 @@ use Tests\\TestCase;
  */
 class ${className} extends TestCase
 {
-`;
-
-  // ============================================================
-  // BUILD TEST METHODS
-class GeneratedRecordedSessionTest extends TestCase
-{
     use RefreshDatabase;
 
     protected User $user;
@@ -78,28 +73,16 @@ class GeneratedRecordedSessionTest extends TestCase
         $this->user = User::factory()->create();
     }
 
-    /**
-     * Test the recorded user session
-     *
-     * @return void
-     */
-    public function test_recorded_user_session(): void
-    {
 `;
 
   // ============================================================
-  // BUILD TEST STEPS
+  // BUILD TEST METHODS
   // ============================================================
   
-  /**
-   * Combine all events into a chronological timeline
-   * This ensures actions happen in the correct order
-   */
   const timeline = buildTimeline(session);
 
   let testMethodCounter = 1;
   let currentUrl = '';
-  let formDataBuffer = {};
   
   // Group events by route to create separate test methods
   const routeGroups = [];
@@ -122,8 +105,8 @@ class GeneratedRecordedSessionTest extends TestCase
   
   // Generate test method for each route group
   for (const group of routeGroups) {
-    const path = new URL(group.route).pathname;
-    const methodName = 'test_' + sanitizeMethodName(path) + '_' + testMethodCounter;
+    const urlPath = new URL(group.route).pathname;
+    const methodName = 'test_' + sanitizeMethodName(urlPath) + '_' + testMethodCounter;
     
     testCode += generateTestMethod(methodName, group, session);
     testMethodCounter++;
@@ -134,57 +117,6 @@ class GeneratedRecordedSessionTest extends TestCase
   // ============================================================
   
   testCode += `}
-
-  let currentUrl = '';
-  let stepCounter = 1;
-  let formDataBuffer = {}; // Store form data until submission
-  
-  for (const event of timeline) {
-    switch (event.type) {
-      case 'route':
-        // Generate HTTP GET request for route navigation
-        if (event.to !== currentUrl) {
-          testCode += generateRouteStep(event, stepCounter);
-          currentUrl = event.to;
-          stepCounter++;
-        }
-        break;
-        
-      case 'click':
-        // Some clicks trigger navigation or form submission
-        // We'll add them as comments for context
-        testCode += generateClickComment(event, stepCounter);
-        stepCounter++;
-        break;
-        
-      case 'formData':
-        if (event.data.type === 'form-submission') {
-          // Generate POST/PUT request with all form data
-          testCode += generateFormSubmissionStep(event, session, stepCounter);
-          formDataBuffer = {}; // Clear buffer after submission
-          stepCounter++;
-        } else {
-          // Store form field data for later submission
-          const fieldName = event.data.name || event.data.id;
-          if (fieldName) {
-            formDataBuffer[fieldName] = event.data.value;
-          }
-        }
-        break;
-        
-      case 'network':
-        // Add network request verification as comments
-        testCode += generateNetworkComment(event, stepCounter);
-        break;
-    }
-  }
-  
-  // ============================================================
-  // CLOSE TEST STRUCTURE
-  // ============================================================
-  
-  testCode += `    }
-}
 `;
 
   // ============================================================
@@ -193,43 +125,9 @@ class GeneratedRecordedSessionTest extends TestCase
   
   fs.writeFileSync(outputFile, testCode);
   
-  console.log(`PHPUnit test generated successfully!`);
-  console.log(`File: ${outputFile}`);
-  console.log(`\nRun with: php artisan test ${outputFile}\n`);
-}
-
-/**
- * Builds a chronological timeline of all events
- * @param {Object} session - The recorded session object
- * @returns {Array} Sorted array of all events
- */
-function buildTimeline(session) {
-  const timeline = [];
-  
-  // Add all routes
-  session.routes.forEach(route => {
-    timeline.push({ type: 'route', ...route });
-  });
-  
-  // Add all clicks
-  session.clicks.forEach(click => {
-    timeline.push({ type: 'click', ...click });
-  });
-  
-  // Add all form data
-  session.formData.forEach(form => {
-    timeline.push({ type: 'formData', data: form, timestamp: form.timestamp });
-  });
-  
-  // Add network requests
-  session.networkRequests.forEach(req => {
-    timeline.push({ type: 'network', ...req });
-  });
-  
-  // Sort by timestamp
-  timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  
-  return timeline;
+  console.log(`✅ PHPUnit test generated successfully!`);
+  console.log(`📄 File: ${outputFile}`);
+  console.log(`\n▶️  Run with: php artisan test ${outputFile}\n`);
 }
 
 /**
@@ -243,7 +141,7 @@ function generateTestMethod(methodName, group, session) {
     {
 `;
 
-  const path = new URL(group.route).pathname;
+  const urlPath = new URL(group.route).pathname;
   
   // Check if this is a form submission route
   const hasFormSubmission = group.events.some(e => 
@@ -257,11 +155,11 @@ function generateTestMethod(methodName, group, session) {
     );
     
     code += `        // Submit form with recorded data\n`;
-    code += `        $response = $this->post('${path}', [\n`;
+    code += `        $response = $this->actingAs($this->user)->post('${urlPath}', [\n`;
     
     if (formEvent && formEvent.data.data) {
       for (const [key, value] of Object.entries(formEvent.data.data)) {
-        code += `            '${escapePhpString(key)}' => '${escapePhpString(value)}',\n`;
+        code += `            '${escapePhpString(key)}' => ${escapePhpValue(value)},\n`;
       }
     }
     
@@ -269,7 +167,7 @@ function generateTestMethod(methodName, group, session) {
     
     // Add assertions based on network responses
     const networkEvent = session.networkRequests.find(req => 
-      req.method === 'POST' && req.url.includes(path)
+      req.method === 'POST' && req.url.includes(urlPath)
     );
     
     if (networkEvent && networkEvent.response) {
@@ -279,126 +177,19 @@ function generateTestMethod(methodName, group, session) {
         code += `        $response->assertRedirect();\n`;
       }
     } else {
-      code += `        $response->assertStatus(200);\n`;
+      code += `        $response->assertSessionHasNoErrors();\n`;
+      code += `        $response->assertStatus(302);\n`;
     }
   } else {
     // Generate GET request
     code += `        // Navigate to ${group.route}\n`;
-    code += `        $response = $this->get('${path}');\n\n`;
+    code += `        $response = $this->actingAs($this->user)->get('${urlPath}');\n\n`;
     code += `        $response->assertStatus(200);\n`;
   }
   
   code += `    }\n\n`;
- * Generates code for a route navigation step
- */
-function generateRouteStep(event, step) {
-  const url = new URL(event.to);
-  const path = url.pathname;
-  
-  return `        // Step ${step}: Navigate to ${path}
-        $response = $this->actingAs($this->user)->get('${path}');
-        $response->assertStatus(200);
-
-`;
-}
-
-/**
- * Generates a comment for click interactions
- */
-function generateClickComment(event, step) {
-  const comment = event.text ? `Click "${event.text}"` : `Click ${event.tagName}`;
-  
-  return `        // Step ${step}: ${comment}
-`;
-}
-
-/**
- * Generates code for a complete form submission
- */
-function generateFormSubmissionStep(event, session, step) {
-  const url = new URL(event.data.url);
-  const path = url.pathname;
-  const method = (event.data.method || 'post').toLowerCase();
-  const phpMethod = method === 'get' ? 'get' : (method === 'put' || method === 'patch' ? 'put' : 'post');
-  
-  let code = `        // Step ${step}: Submit form to ${path}
-`;
-  
-  // Generate the form data array
-  if (event.data.data && Object.keys(event.data.data).length > 0) {
-    code += `        $formData = [\n`;
-    
-    for (const [key, value] of Object.entries(event.data.data)) {
-      const escapedValue = escapePhpValue(value);
-      code += `            '${key}' => ${escapedValue},\n`;
-    }
-    
-    code += `        ];\n\n`;
-    code += `        $response = $this->actingAs($this->user)->${phpMethod}('${path}', $formData);\n`;
-  } else {
-    code += `        $response = $this->actingAs($this->user)->${phpMethod}('${path}');\n`;
-  }
-  
-  code += `        $response->assertSessionHasNoErrors();
-        // Adjust the assertion below based on expected behavior (redirect, status, etc.)
-        $response->assertStatus(302); // Typically redirects after form submission
-
-`;
   
   return code;
-}
-
-/**
- * Sanitizes a path to create a valid PHP method name
- */
-function sanitizeMethodName(path) {
-  return path
-    .replace(/^\//, '')
-    .replace(/\//g, '_')
-    .replace(/[^a-zA-Z0-9_]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '')
-    .toLowerCase() || 'index';
-}
-
-/**
- * Escapes special characters for PHP strings
- */
-function escapePhpString(str) {
-  return String(str)
- * Generates a comment for network requests
- */
-function generateNetworkComment(event, step) {
-  return `        // Step ${step}: ${event.method} request to ${event.url}
-        // Status: ${event.response?.status || 'pending'}
-`;
-}
-
-/**
- * Escapes and formats values for PHP
- */
-function escapePhpValue(value) {
-  if (value === null || value === undefined) {
-    return 'null';
-  }
-  
-  if (typeof value === 'boolean') {
-    return value ? 'true' : 'false';
-  }
-  
-  if (typeof value === 'number') {
-    return String(value);
-  }
-  
-  // String values need to be escaped
-  const escapedValue = String(value)
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t');
-
-  return `'${escapedValue}'`;
 }
 
 // ============================================================

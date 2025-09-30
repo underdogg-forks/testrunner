@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { buildTimeline, escapeSelector, escapeValue } = require('./utils');
 
 /**
  * Converts a recorded session to Playwright test format
@@ -121,40 +122,6 @@ test.describe('Recorded User Session', () => {
 }
 
 /**
- * Builds a chronological timeline of all events
- * @param {Object} session - The recorded session object
- * @returns {Array} Sorted array of all events
- */
-function buildTimeline(session) {
-  const timeline = [];
-  
-  // Add all routes
-  session.routes.forEach(route => {
-    timeline.push({ type: 'route', ...route });
-  });
-  
-  // Add all clicks
-  session.clicks.forEach(click => {
-    timeline.push({ type: 'click', ...click });
-  });
-  
-  // Add all form data
-  session.formData.forEach(form => {
-    timeline.push({ type: 'formData', data: form, timestamp: form.timestamp });
-  });
-  
-  // Add network requests
-  session.networkRequests.forEach(req => {
-    timeline.push({ type: 'network', ...req });
-  });
-  
-  // Sort by timestamp
-  timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  
-  return timeline;
-}
-
-/**
  * Generates code for a route navigation step
  */
 function generateRouteStep(event, step) {
@@ -232,20 +199,6 @@ function generateNetworkAssertion(event, step) {
     // Network request captured: ${event.method} ${event.url}
     // Status: ${event.response?.status || 'pending'}
 `;
-}
-
-/**
- * Escapes special characters in CSS selectors
- */
-function escapeSelector(selector) {
-  return selector.replace(/'/g, "\\'");
-}
-
-/**
- * Escapes special characters in form values
- */
-function escapeValue(value) {
-  return String(value).replace(/'/g, "\\'").replace(/\n/g, '\\n');
 }
 
 // ============================================================
