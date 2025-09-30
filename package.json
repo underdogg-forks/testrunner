@@ -2,12 +2,11 @@
   "name": "route-discovery",
   "version": "1.0.0",
   "scripts": {
-    "discover": "node discover-routes.js",
-    "disc-phpunit": "node discover-phpunit.js",
-    "record": "node record-routes.js",
-    "playback": "node playback.js"
-    "test:jest": "jest",
-    "test:playwright": "playwright test"
+    "record": "node record-advanced.js",
+    "playback": "node playback.js",
+    "convert:phpunit": "node convert-to-phpunit.js",
+    "convert:playwright": "node convert-to-playwright.js",
+    "discover": "node discover-routes.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",
