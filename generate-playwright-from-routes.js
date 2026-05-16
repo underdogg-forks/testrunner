@@ -49,7 +49,7 @@ async function main() {
   }
 
   if (typeof routesFile !== 'string' || routesFile.trim().length === 0) {
-    console.error('❌ Error: Provide a Laravel routes JSON file via ROUTES_JSON, ROUTES_FILE, or --routes.');
+    console.error('Error: Provide a Laravel routes JSON file via ROUTES_JSON, ROUTES_FILE, or --routes.');
     process.exit(1);
   }
 
@@ -75,14 +75,14 @@ async function main() {
     );
   }
 
-  console.log(`✅ Generated ${Object.keys(moduleGroups).length} Playwright spec file(s) from ${routesFile}`);
-  console.log(`📁 Output: tests-playwright/*.spec.js`);
-  console.log(`▶️ Run: npx playwright test`);
+  console.log(`Generated ${Object.keys(moduleGroups).length} Playwright spec file(s) from ${routesFile}`);
+  console.log(`Output: tests-playwright/*.spec.js`);
+  console.log(`Run: npx playwright test`);
 }
 
 if (require.main === module) {
   main().catch((error) => {
-    console.error('❌ Failed to generate Playwright tests from routes:', error.message);
+    console.error('Failed to generate Playwright tests from routes:', error.message);
     process.exit(1);
   });
 }
