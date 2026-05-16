@@ -446,7 +446,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
       log(`Generated one-test-per-link Playwright spec at ${perLinkOutputFile}`);
     } catch (error) {
       recordProblem('generate:playwright:per-link', error);
-      generationRetryList.push(`Rerun full flow: npm run generate:playwright:auto # per-link generation failed for ${recordingFile}`);
+      generationRetryList.push('npm run generate:playwright:auto');
     }
 
     const untouchedRoutes = Array.from(routeChecklist).filter((route) => !touchedRouteChecklist.has(route));
