@@ -25,6 +25,7 @@ This workflow:
 - fills forms with dummy values and attempts submission,
 - records route/link/form/network activity,
 - generates Playwright output from the resulting recording,
+- generates a one-test-per-touched-route Playwright spec file,
 - writes error details to `storage/logs/e2e-recording.log`,
 - writes untouched route checklist to `todo.txt`.
 

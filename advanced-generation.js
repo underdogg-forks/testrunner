@@ -101,6 +101,44 @@ async function run() {
   let step = 1;
   let browser;
 
+  const generatePerLinkSpec = (touchedRoutes, outputFile) => {
+    const literal = (value) => JSON.stringify(String(value));
+    const routeTests = touchedRoutes.map((route) => {
+      return `
+  test(${literal(`should load ${route}`)}, async ({ page }) => {
+    await login(page);
+    await page.goto(${literal(route)}, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle');
+  });`;
+    }).join('\n');
+
+    const spec = `import { test } from '@playwright/test';
+
+const BASE_URL = process.env.BASE_URL || ${literal(baseUrl)};
+const LOGIN_URL = process.env.LOGIN_URL || ${literal(loginUrl)};
+const TEST_EMAIL = process.env.TEST_EMAIL || ${literal(email)};
+const TEST_PASSWORD = process.env.TEST_PASSWORD || ${literal(password)};
+const EMAIL_SELECTOR = process.env.EMAIL_SELECTOR || ${literal(emailSelector)};
+const PASSWORD_SELECTOR = process.env.PASSWORD_SELECTOR || ${literal(passwordSelector)};
+const SUBMIT_SELECTOR = process.env.SUBMIT_SELECTOR || ${literal(submitSelector)};
+
+async function login(page) {
+  await page.goto(\`\${BASE_URL}\${LOGIN_URL}\`, { waitUntil: 'domcontentloaded' });
+  await page.fill(EMAIL_SELECTOR, TEST_EMAIL);
+  await page.fill(PASSWORD_SELECTOR, TEST_PASSWORD);
+  await Promise.all([
+    page.waitForURL((url) => !url.toString().includes(LOGIN_URL), { timeout: 15000 }),
+    page.click(SUBMIT_SELECTOR)
+  ]);
+}
+
+test.describe('Advanced generated - one test per touched route', () => {${routeTests}
+});
+`;
+
+    fs.writeFileSync(outputFile, spec);
+  };
+
   const recordProblem = (scope, error) => {
     const message = error instanceof Error ? error.message : String(error);
     session.problems.push({
@@ -360,6 +398,11 @@ async function run() {
     const outputFile = path.join(testsDir, `advanced-generated-${timestamp}.spec.js`);
     convertToPlaywright(recordingFile, outputFile);
     log(`Generated Playwright test at ${outputFile}`);
+
+    const perLinkOutputFile = path.join(testsDir, `advanced-generated-per-link-${timestamp}.spec.js`);
+    const touchedRoutes = Array.from(touchedRouteChecklist);
+    generatePerLinkSpec(touchedRoutes, perLinkOutputFile);
+    log(`Generated one-test-per-link Playwright spec at ${perLinkOutputFile}`);
 
     const untouchedRoutes = Array.from(routeChecklist).filter((route) => !touchedRouteChecklist.has(route));
     const todoFile = path.resolve('todo.txt');

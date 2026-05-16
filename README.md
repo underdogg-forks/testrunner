@@ -51,6 +51,7 @@ What it does:
 6. Generates:
    - `recordings/e2e-session-*.json`
    - `tests-playwright/advanced-generated-*.spec.js`
+   - `tests-playwright/advanced-generated-per-link-*.spec.js` (one test per touched route/link)
 7. Writes errors to:
    - `storage/logs/e2e-recording.log`
 8. Writes untouched route checklist to:
@@ -106,6 +107,19 @@ Common variables:
 - `TEST_EMAIL`
 - `TEST_PASSWORD`
 - `HEADLESS` (`true`/`false`)
+- `MAX_LINKS_PER_PAGE` (default: `250`)
+
+Recommended full command for authenticated traversal:
+
+```bash
+BASE_URL=http://localhost:8000 \
+ROUTES_FILE=routes.json \
+LOGIN_URL=/login \
+TEST_EMAIL=admin@example.com \
+TEST_PASSWORD=secret \
+DASHBOARD_URL=/dashboard \
+npm run advanced.js
+```
 
 Manual recorder variables:
 
