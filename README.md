@@ -7,7 +7,8 @@ A comprehensive test automation system that records user interactions and automa
 - **🎬 Session Recording**: Records clicks, form inputs, route changes, and network requests with detailed metadata
 - **🔄 Multi-Framework Test Generation**: Generate Playwright, PHPUnit, or Jest tests from a single recording
 - **📼 Session Playback**: Replay recorded sessions for debugging and validation
-- **🔍 Route Discovery**: Automatically crawl your app to discover routes and generate boilerplate tests
+- **🗺️ Known-Routes First**: Use your existing route list (for Laravel, `php artisan route:list`) to drive recording
+- **🔍 Fallback Route Discovery**: Automatically crawl apps when routes are not available upfront
 - **📸 Optional Screenshots**: Capture screenshots at each interaction point
 - **📝 Human-Readable Logs**: Console logging for easy session review
 
@@ -28,6 +29,17 @@ npm run record
 ```
 
 Recording is saved to `recordings/session-[timestamp].json`
+
+### Known Routes Workflow (Recommended)
+
+For Laravel apps, export routes first and treat them as the source of truth:
+
+```bash
+php artisan route:list --json > routes.json
+```
+
+Then use the `record` action against those known routes to capture the test flows you want to generate.  
+This avoids blind crawling and keeps recordings aligned with your application's real route table.
 
 ### Generate Tests
 
@@ -158,9 +170,9 @@ php artisan test tests/Feature/GeneratedTest*.php  # Specific test
 php artisan test --verbose                         # Verbose output
 ```
 
-## 🔍 Route Discovery (Alternative Workflow)
+## 🔍 Route Discovery (Fallback for Exotic/Non-Laravel Apps)
 
-Automatically discover routes and generate boilerplate tests:
+If your app cannot provide routes upfront (for example, exotic or non-Laravel stacks), use discovery:
 
 ```bash
 npm run discover

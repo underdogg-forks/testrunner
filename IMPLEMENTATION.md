@@ -1,117 +1,45 @@
 # Implementation Summary
 
-## Advanced Playwright-based Recording System for Automated Test Generation
+## Known-Routes-First Test Recording and Generation
 
-### Problem Statement
-Implement an advanced Playwright-based recording system for automated test generation that can:
-- Record user interactions comprehensively
-- Generate tests for multiple frameworks (Playwright, PHPUnit, Jest)
-- Support session playback for debugging
-- Provide a complete workflow from recording to test execution
+### Primary Workflow
 
-### Solution Implemented
+This implementation assumes routes are already known and uses that route inventory as the input to recording.
 
-#### 1. Core Recording System ✅
-**File: `advanced-recording.js`**
-- Already existed and fully functional
-- Records clicks, form inputs, route changes, and network requests
-- Saves sessions as structured JSON with complete metadata
-- Configurable via environment variables
+For Laravel applications, route inventory is obtained directly from Artisan:
 
-#### 2. Fixed Package Configuration ✅
-**File: `package.json`**
-- Fixed incorrect script reference: `record-advanced.js` → `advanced-recording.js`
-- All npm scripts now correctly reference existing files
-- Verified all scripts work properly
+```bash
+php artisan route:list --json > routes.json
+```
 
-#### 3. Created Missing Converter ✅
-**File: `convert-to-phpunit.js` (NEW)**
-- Converts recorded sessions to PHPUnit Feature tests
-- Generates proper Laravel test structure
-- Handles GET requests and form submissions
-- Creates test methods grouped by routes
-- Includes proper assertions based on network responses
-- Tested and verified with valid PHP syntax
+The `record` action is then used to capture real user interactions for those known routes, and the resulting session files are converted into test files (Playwright/PHPUnit).
 
-#### 4. Enhanced Playback Support ✅
-**File: `playback.js` (UPDATED)**
-- Previously only supported legacy format (clicks array)
-- Now supports both formats:
-  - Legacy: Simple clicks array
-  - Advanced: Full session object with timeline
-- Improved error handling and logging
-- Plays back all event types: routes, clicks, form data
+### Why this is the default
 
-#### 5. Comprehensive Documentation ✅
-**File: `README.md` (COMPLETELY REWRITTEN)**
-- Added feature overview and benefits
-- Documented all configuration options
-- Included usage examples for all scripts
-- Added code examples for generated tests
-- Created troubleshooting guide
-- Documented file structure and architecture
-- Included extension examples
+1. **Reliable source of truth**: route list comes from the framework, not guesswork.
+2. **Better coverage planning**: tests can be mapped to known endpoints before recording.
+3. **Less noise**: avoids crawler-only paths and internal navigation artifacts.
 
-#### 6. Proper .gitignore ✅
-**File: `.gitignore` (NEW)**
-- Excludes node_modules and package-lock.json
-- Excludes recordings, storage, and generated test directories
-- Prevents build artifacts from being committed
-- Includes IDE and OS-specific exclusions
+### Fallback Workflow for Exotic / Non-Laravel Apps
 
-### Testing & Validation ✅
+When a route list is not available (exotic or non-Laravel applications), route discovery remains supported:
 
-All components have been tested and verified:
+- `npm run discover`
 
-1. **Syntax Validation**
-   - ✅ All JavaScript files pass Node.js syntax check
-   - ✅ Generated Playwright tests have valid syntax
-   - ✅ Generated PHPUnit tests have valid PHP syntax
+This fallback crawls the application to infer reachable routes and generate starter tests.
 
-2. **Functional Testing**
-   - ✅ Playwright conversion: Creates valid test files
-   - ✅ PHPUnit conversion: Creates valid Laravel tests
-   - ✅ Playback: Supports both recording formats
-   - ✅ All npm scripts execute correctly
+### Current Tooling
 
-3. **Workflow Validation**
-   - ✅ Complete workflow tested: Record → Convert → Test
-   - ✅ Sample session successfully converted to both formats
-   - ✅ Generated tests are executable and properly structured
+1. **Recording**: `npm run record`
+2. **Conversion**:
+   - `npm run convert:playwright <recording.json>`
+   - `npm run convert:phpunit <recording.json>`
+3. **Playback**: `npm run playback <recording.json>`
+4. **Fallback discovery**: `npm run discover`
 
-### Key Benefits
+### Documentation Direction
 
-1. **Multi-Framework Support**: Generate tests for Playwright, PHPUnit, and Jest
-2. **No Manual Test Writing**: Record once, generate tests automatically
-3. **Real User Data**: Uses actual form values and interaction sequences
-4. **Standard Tooling**: Leverages industry-standard test frameworks
-5. **Easy Customization**: Generated tests can be easily extended
-6. **Comprehensive Recording**: Captures clicks, forms, routes, and network requests
+Documentation now reflects:
 
-### Files Modified/Created
-
-- ✅ Created: `.gitignore`
-- ✅ Created: `convert-to-phpunit.js`
-- ✅ Modified: `package.json` (fixed script reference)
-- ✅ Modified: `playback.js` (enhanced format support)
-- ✅ Modified: `README.md` (complete rewrite)
-
-### Minimal Changes Approach
-
-All changes were surgical and minimal:
-- Only fixed what was broken (package.json reference)
-- Only added what was missing (convert-to-phpunit.js)
-- Only enhanced what was incomplete (playback.js format support)
-- Preserved all existing working code
-- No deletions or removals of functional code
-
-### System Now Provides
-
-1. **Recording**: `npm run record` - Opens browser for user interaction recording
-2. **Conversion**: 
-   - `npm run convert:playwright <file>` - Generate Playwright tests
-   - `npm run convert:phpunit <file>` - Generate PHPUnit tests
-3. **Playback**: `npm run playback <file>` - Replay recorded sessions
-4. **Discovery**: `npm run discover` - Auto-discover routes and generate tests
-
-All functionality is documented, tested, and ready to use!
+- Known-routes-first operation as the standard workflow (Laravel via `php artisan route:list`).
+- Discovery as an explicit fallback path for applications that cannot provide a route list upfront.
