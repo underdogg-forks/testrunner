@@ -6,7 +6,8 @@
     "playback": "node playback.js",
     "convert:phpunit": "node convert-to-phpunit.js",
     "convert:playwright": "node convert-to-playwright.js",
-    "discover": "node discover-routes.js"
+    "discover": "node discover-routes.js",
+    "generate:playwright:routes": "node generate-playwright-from-routes.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",

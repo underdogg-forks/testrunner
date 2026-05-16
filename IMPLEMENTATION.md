@@ -20,6 +20,12 @@ BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run discover
 
 This generates Playwright tests from the Laravel route inventory without relying on crawler inference.
 
+For Playwright-only generation from route inventory:
+
+```bash
+BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run generate:playwright:routes
+```
+
 ### Why this is the default
 
 1. **Reliable source of truth**: route list comes from the framework, not guesswork.
@@ -36,12 +42,13 @@ This fallback crawls the application to infer reachable routes and generate star
 
 ### Current Tooling
 
-1. **Recording**: `npm run record`
+1. **Recording**: `npm run record` (manual interaction recording in an opened browser)
 2. **Conversion**:
    - `npm run convert:playwright <recording.json>`
    - `npm run convert:phpunit <recording.json>`
 3. **Playback**: `npm run playback <recording.json>`
-4. **Fallback discovery**: `npm run discover`
+4. **Route inventory generation**: `npm run generate:playwright:routes`
+5. **Fallback discovery**: `npm run discover`
 
 ### Documentation Direction
 

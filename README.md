@@ -7,7 +7,7 @@ A comprehensive test automation system that records user interactions and automa
 - **🎬 Session Recording**: Records clicks, form inputs, route changes, and network requests with detailed metadata
 - **🔄 Multi-Framework Test Generation**: Generate Playwright, PHPUnit, or Jest tests from a single recording
 - **📼 Session Playback**: Replay recorded sessions for debugging and validation
-- **🗺️ Known-Routes First**: Use your existing route list (for Laravel, `php artisan route:list`) to drive recording
+- **🗺️ Known-Routes First**: Generate Playwright tests directly from Laravel route inventory (`php artisan route:list --json`)
 - **🔍 Fallback Route Discovery**: Automatically crawl apps when routes are not available upfront
 - **📸 Optional Screenshots**: Capture screenshots at each interaction point
 - **📝 Human-Readable Logs**: Console logging for easy session review
@@ -20,7 +20,16 @@ A comprehensive test automation system that records user interactions and automa
 npm install --save-dev @playwright/test playwright jest
 ```
 
-### Record a Session
+### Generate Playwright Tests from Laravel Routes (Recommended)
+
+```bash
+php artisan route:list --json > routes.json
+BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run generate:playwright:routes
+```
+
+This produces module-based Playwright specs in `tests-playwright/` from known routes.
+
+### Record a Session (Manual Interaction Recording)
 
 ```bash
 npm run record
@@ -28,7 +37,8 @@ npm run record
 # Press Ctrl+C when done
 ```
 
-Recording is saved to `recordings/session-[timestamp].json`
+`advanced-recording.js` records what you manually do in the browser. It does **not** auto-click through all routes.
+Recording is saved to `recordings/session-[timestamp].json`.
 
 ### Known Routes Workflow (Recommended for Laravel)
 
@@ -38,13 +48,13 @@ For Laravel apps, export routes first and treat them as the source of truth:
 php artisan route:list --json > routes.json
 ```
 
-Then generate Playwright tests directly from that route inventory:
+Then generate Playwright/Jest discovery tests directly from that route inventory:
 
 ```bash
 BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run discover
 ```
 
-This uses your Laravel route table as the route source and generates module-based Playwright specs in `tests-playwright/`.
+This uses your Laravel route table as the route source and generates module-based tests.
 
 ### Generate Tests
 
