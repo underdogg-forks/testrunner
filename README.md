@@ -8,6 +8,7 @@ A comprehensive test automation system that records user interactions and automa
 - **🔄 Multi-Framework Test Generation**: Generate Playwright, PHPUnit, or Jest tests from a single recording
 - **📼 Session Playback**: Replay recorded sessions for debugging and validation
 - **🗺️ Known-Routes First**: Generate Playwright tests directly from Laravel route inventory (`php artisan route:list --json`)
+- **🤖 Advanced Auto-Generation**: Auto-login, visit routes, fill forms with dummy data, and generate Playwright tests from route inventory
 - **🔍 Fallback Route Discovery**: Automatically crawl apps when routes are not available upfront
 - **📸 Optional Screenshots**: Capture screenshots at each interaction point
 - **📝 Human-Readable Logs**: Console logging for easy session review
@@ -29,6 +30,23 @@ BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run generate:playwrig
 
 This produces module-based Playwright specs in `tests-playwright/` from known routes.
 
+### Advanced Auto-Generation from Laravel Routes
+
+```bash
+php artisan route:list --json > routes.json
+BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run adavanced-generation
+```
+
+(`npm run advanced-generation` is also available as an alias.)
+
+What this does:
+- Logs in once (defaults to `/login`) to reach authenticated routes
+- Navigates through known routes and discovered menu links
+- Auto-fills forms with dummy values and attempts submission
+- Writes run issues to `storage/logs/e2e-recording.log`
+- Stores session data in `recordings/e2e-session-*.json`
+- Generates Playwright test output in `tests-playwright/advanced-generated-*.spec.js`
+
 ### Record a Session (Manual Interaction Recording)
 
 ```bash
@@ -39,6 +57,8 @@ npm run record
 
 `advanced-recording.js` records what you manually do in the browser. It does **not** auto-click through all routes.
 Recording is saved to `recordings/session-[timestamp].json`.
+
+You can still use manual recording when you want full control over the exact user journey.
 
 ### Known Routes Workflow (Recommended for Laravel)
 
@@ -76,6 +96,19 @@ npm run convert:phpunit recordings/session-[timestamp].json
 npm run playback recordings/session-[timestamp].json
 ```
 
+## 🧰 Script Reference
+
+- `advanced-recording.js` (`npm run record`): Manual interaction recorder (you click/type).
+- `advanced-generation.js` (`npm run adavanced-generation`): Route-inventory-driven auto-runner that logs in, auto-fills forms, logs problems, and generates Playwright tests.
+- `generate-playwright-from-routes.js` (`npm run generate:playwright:routes`): Direct module-based Playwright spec generation from `routes.json` (no browser crawling).
+- `discover-routes.js` (`npm run discover`): Route discovery/generation workflow (uses inventory when provided, crawler fallback otherwise).
+- `discover-phpunit.js`: Route discovery helper for PHPUnit-focused generation.
+- `convert-to-playwright.js` (`npm run convert:playwright <recording.json>`): Converts recording JSON into Playwright tests.
+- `convert-to-phpunit.js` (`npm run convert:phpunit <recording.json>`): Converts recording JSON into PHPUnit tests.
+- `playback.js` (`npm run playback <recording.json>`): Replays recorded sessions in browser.
+- `record-routes.js`: Legacy lightweight click recorder script.
+- `utils.js`: Shared timeline/escaping helpers used by converters and playback.
+
 ## 📋 What Gets Recorded
 
 | Category | Details |
@@ -101,6 +134,10 @@ RECORD_NETWORK=false npm run record
 
 # Enable screenshot capture
 CAPTURE_SCREENSHOTS=true npm run record
+
+# Advanced generation auth and routing inputs
+ROUTES_FILE=routes.json BASE_URL=http://localhost:8000 npm run adavanced-generation
+LOGIN_URL=/login TEST_EMAIL=admin@example.com TEST_PASSWORD=secret npm run adavanced-generation
 ```
 
 ## 📂 Project Structure

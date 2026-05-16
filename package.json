@@ -7,7 +7,9 @@
     "convert:phpunit": "node convert-to-phpunit.js",
     "convert:playwright": "node convert-to-playwright.js",
     "discover": "node discover-routes.js",
-    "generate:playwright:routes": "node generate-playwright-from-routes.js"
+    "generate:playwright:routes": "node generate-playwright-from-routes.js",
+    "advanced-generation": "node advanced-generation.js",
+    "adavanced-generation": "node advanced-generation.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",

@@ -26,6 +26,19 @@ For Playwright-only generation from route inventory:
 BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run generate:playwright:routes
 ```
 
+For login-aware automated traversal + recording + Playwright generation:
+
+```bash
+BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run adavanced-generation
+```
+
+This run:
+- Authenticates (default `/login`) for protected routes
+- Visits known routes and menu-derived routes
+- Fills forms with dummy data and attempts submission
+- Logs issues to `storage/logs/e2e-recording.log`
+- Generates `recordings/e2e-session-*.json` and `tests-playwright/advanced-generated-*.spec.js`
+
 ### Why this is the default
 
 1. **Reliable source of truth**: route list comes from the framework, not guesswork.
@@ -48,7 +61,8 @@ This fallback crawls the application to infer reachable routes and generate star
    - `npm run convert:phpunit <recording.json>`
 3. **Playback**: `npm run playback <recording.json>`
 4. **Route inventory generation**: `npm run generate:playwright:routes`
-5. **Fallback discovery**: `npm run discover`
+5. **Advanced auto-generation**: `npm run adavanced-generation`
+6. **Fallback discovery**: `npm run discover`
 
 ### Documentation Direction
 
