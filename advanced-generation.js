@@ -440,13 +440,13 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     }
 
     const perLinkOutputFile = path.join(testsDir, `advanced-generated-per-link-${timestamp}.spec.js`);
-    const touchedRoutes = Array.from(touchedAllLinksChecklist);
+    const touchedLinks = Array.from(touchedAllLinksChecklist);
     try {
-      generatePerLinkSpec(touchedRoutes, perLinkOutputFile);
+      generatePerLinkSpec(touchedLinks, perLinkOutputFile);
       log(`Generated one-test-per-link Playwright spec at ${perLinkOutputFile}`);
     } catch (error) {
       recordProblem('generate:playwright:per-link', error);
-      generationRetryList.push(`npm run generate:playwright:auto # per-link generation failed for ${recordingFile}`);
+      generationRetryList.push(`Rerun full flow: npm run generate:playwright:auto # per-link generation failed for ${recordingFile}`);
     }
 
     const untouchedRoutes = Array.from(routeChecklist).filter((route) => !touchedRouteChecklist.has(route));
