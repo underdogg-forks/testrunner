@@ -29,7 +29,7 @@ BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run generate:playwrig
 For login-aware automated traversal + recording + Playwright generation:
 
 ```bash
-BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run adavanced-generation
+BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run advanced-generation
 ```
 
 This run:
@@ -61,7 +61,7 @@ This fallback crawls the application to infer reachable routes and generate star
    - `npm run convert:phpunit <recording.json>`
 3. **Playback**: `npm run playback <recording.json>`
 4. **Route inventory generation**: `npm run generate:playwright:routes`
-5. **Advanced auto-generation**: `npm run adavanced-generation`
+5. **Advanced auto-generation**: `npm run advanced-generation` (alias: `npm run adavanced-generation`)
 6. **Fallback discovery**: `npm run discover`
 
 ### Documentation Direction

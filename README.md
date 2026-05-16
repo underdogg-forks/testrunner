@@ -34,10 +34,10 @@ This produces module-based Playwright specs in `tests-playwright/` from known ro
 
 ```bash
 php artisan route:list --json > routes.json
-BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run adavanced-generation
+BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run advanced-generation
 ```
 
-(`npm run advanced-generation` is also available as an alias.)
+Compatibility alias (same behavior): `npm run adavanced-generation`.
 
 What this does:
 - Logs in once (defaults to `/login`) to reach authenticated routes
@@ -99,7 +99,7 @@ npm run playback recordings/session-[timestamp].json
 ## 🧰 Script Reference
 
 - `advanced-recording.js` (`npm run record`): Manual interaction recorder (you click/type).
-- `advanced-generation.js` (`npm run adavanced-generation`): Route-inventory-driven auto-runner that logs in, auto-fills forms, logs problems, and generates Playwright tests.
+- `advanced-generation.js` (`npm run advanced-generation`): Route-inventory-driven auto-runner that logs in, auto-fills forms, logs problems, and generates Playwright tests.
 - `generate-playwright-from-routes.js` (`npm run generate:playwright:routes`): Direct module-based Playwright spec generation from `routes.json` (no browser crawling).
 - `discover-routes.js` (`npm run discover`): Route discovery/generation workflow (uses inventory when provided, crawler fallback otherwise).
 - `discover-phpunit.js`: Route discovery helper for PHPUnit-focused generation.
@@ -136,8 +136,8 @@ RECORD_NETWORK=false npm run record
 CAPTURE_SCREENSHOTS=true npm run record
 
 # Advanced generation auth and routing inputs
-ROUTES_FILE=routes.json BASE_URL=http://localhost:8000 npm run adavanced-generation
-LOGIN_URL=/login TEST_EMAIL=admin@example.com TEST_PASSWORD=secret npm run adavanced-generation
+ROUTES_FILE=routes.json BASE_URL=http://localhost:8000 npm run advanced-generation
+LOGIN_URL=/login TEST_EMAIL=admin@example.com TEST_PASSWORD=secret npm run advanced-generation
 ```
 
 ## 📂 Project Structure
