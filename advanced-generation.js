@@ -28,6 +28,12 @@ function selectorFor(elementHandle, fallback = '') {
     .catch(() => fallback || 'unknown');
 }
 
+function escapeCssAttributeValue(value) {
+  return String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
+}
+
 async function run() {
   const args = process.argv.slice(2);
   const getArg = (name) => {
@@ -50,6 +56,7 @@ async function run() {
   const passwordSelector = getArg('passwordSelector') || process.env.PASSWORD_SELECTOR || 'input[name="password"], input[id="password"]';
   const submitSelector = getArg('submitSelector') || process.env.SUBMIT_SELECTOR || 'button[type="submit"], input[type="submit"]';
   const headless = (process.env.HEADLESS || 'true') !== 'false';
+  const maxLinksPerPage = Number(getArg('maxLinksPerPage') || process.env.MAX_LINKS_PER_PAGE || 250);
 
   if (!routesFile.trim()) {
     console.error('❌ Error: Provide routes inventory using ROUTES_FILE or --routes.');
@@ -178,6 +185,7 @@ async function run() {
       const unique = new Set();
       const internalLinks = [];
       for (const entry of urls) {
+        if (internalLinks.length >= maxLinksPerPage) break;
         const normalized = normalizeUrl(entry.href);
         if (!normalized || unique.has(normalized)) continue;
         unique.add(normalized);
@@ -313,7 +321,7 @@ async function run() {
 
         const discoveredLinks = await collectInternalLinks();
         for (const link of discoveredLinks) {
-          const safeHref = link.href.replace(/"/g, '\\"');
+          const safeHref = escapeCssAttributeValue(link.href);
           session.clicks.push({
             step,
             timestamp: new Date().toISOString(),
