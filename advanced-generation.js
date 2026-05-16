@@ -182,7 +182,6 @@ async function run() {
         if (!normalized || unique.has(normalized)) continue;
         unique.add(normalized);
         if (!normalized.startsWith(baseUrl)) continue;
-        if (normalized.startsWith('mailto:') || normalized.startsWith('tel:')) continue;
         internalLinks.push({ ...entry, href: normalized });
       }
 
@@ -314,10 +313,11 @@ async function run() {
 
         const discoveredLinks = await collectInternalLinks();
         for (const link of discoveredLinks) {
+          const safeHref = link.href.replace(/"/g, '\\"');
           session.clicks.push({
             step,
             timestamp: new Date().toISOString(),
-            selector: link.id ? `#${link.id}` : (link.className ? `a.${link.className.split(/\s+/).filter(Boolean).join('.')}` : `a[href="${link.href}"]`),
+            selector: link.id ? `#${link.id}` : `a[href="${safeHref}"]`,
             text: link.text,
             tagName: 'A',
             href: link.href,
