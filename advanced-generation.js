@@ -178,6 +178,10 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     const seeded = routes.map((r) => normalizeUrl(r.url)).filter(Boolean);
     const routeChecklist = new Set(seeded);
     const touchedRouteChecklist = new Set();
+    const touchedAllLinksChecklist = new Set();
+    const matchedDiscoveredLinks = new Set();
+    const unmatchedDiscoveredLinks = new Set();
+    const generationRetryList = [];
     const queue = Array.from(new Set(seeded));
     const visited = new Set();
     const queued = new Set(queue);
@@ -255,6 +259,11 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
 
       for (const found of internalLinks) {
         const normalized = found.href;
+        if (routeChecklist.has(normalized)) {
+          matchedDiscoveredLinks.add(normalized);
+        } else {
+          unmatchedDiscoveredLinks.add(normalized);
+        }
         if (!normalized || queued.has(normalized) || visited.has(normalized)) continue;
         queued.add(normalized);
         queue.push(normalized);
@@ -376,6 +385,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
         if (routeChecklist.has(currentUrl)) {
           touchedRouteChecklist.add(currentUrl);
         }
+        touchedAllLinksChecklist.add(currentUrl);
 
         await fillFormsAndSubmit(currentUrl);
 
@@ -413,28 +423,61 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     session.metadata.routeInventoryTotal = routeChecklist.size;
     session.metadata.routeInventoryTouched = touchedRouteChecklist.size;
     session.metadata.routeInventoryUntouched = routeChecklist.size - touchedRouteChecklist.size;
+    session.metadata.discoveredMatchedLinks = matchedDiscoveredLinks.size;
+    session.metadata.discoveredUnmatchedLinks = unmatchedDiscoveredLinks.size;
 
     const recordingFile = path.join(recordingsDir, `e2e-session-${timestamp}.json`);
     fs.writeFileSync(recordingFile, JSON.stringify(session, null, 2));
     log(`Saved recording to ${recordingFile}`);
 
     const outputFile = path.join(testsDir, `advanced-generated-${timestamp}.spec.js`);
-    convertToPlaywright(recordingFile, outputFile);
-    log(`Generated Playwright test at ${outputFile}`);
+    try {
+      convertToPlaywright(recordingFile, outputFile);
+      log(`Generated Playwright test at ${outputFile}`);
+    } catch (error) {
+      recordProblem('generate:playwright', error);
+      generationRetryList.push(`npm run convert:playwright ${recordingFile}`);
+    }
 
     const perLinkOutputFile = path.join(testsDir, `advanced-generated-per-link-${timestamp}.spec.js`);
-    const touchedRoutes = Array.from(touchedRouteChecklist);
-    generatePerLinkSpec(touchedRoutes, perLinkOutputFile);
-    log(`Generated one-test-per-link Playwright spec at ${perLinkOutputFile}`);
+    const touchedRoutes = Array.from(touchedAllLinksChecklist);
+    try {
+      generatePerLinkSpec(touchedRoutes, perLinkOutputFile);
+      log(`Generated one-test-per-link Playwright spec at ${perLinkOutputFile}`);
+    } catch (error) {
+      recordProblem('generate:playwright:per-link', error);
+      generationRetryList.push(`Re-generate per-link spec from ${recordingFile}`);
+    }
 
     const untouchedRoutes = Array.from(routeChecklist).filter((route) => !touchedRouteChecklist.has(route));
+    const unmatchedLinks = Array.from(unmatchedDiscoveredLinks).sort();
+    const unmatchedLogFile = path.join(logDir, 'unmatched-links.log');
+    fs.writeFileSync(
+      unmatchedLogFile,
+      unmatchedLinks.length
+        ? unmatchedLinks.map((link) => `${link}\n`).join('')
+        : 'No unmatched internal links were discovered.\n'
+    );
+    log(`Wrote unmatched links to ${unmatchedLogFile}`);
     const todoFile = path.resolve('todo.txt');
     const todoContent = [
       '# Untouched routes from routes.json',
       '',
       ...(untouchedRoutes.length
         ? untouchedRoutes.map((route) => `- [ ] ${route}`)
-        : ['All routes from routes.json were touched.'])
+        : ['All routes from routes.json were touched.']),
+      '',
+      '# Unmatched discovered links',
+      '',
+      ...(unmatchedLinks.length
+        ? unmatchedLinks.map((link) => `- [ ] ${link}`)
+        : ['No unmatched internal links were discovered.']),
+      '',
+      '# Generation retry items',
+      '',
+      ...(generationRetryList.length
+        ? generationRetryList.map((item) => `- [ ] ${item}`)
+        : ['No generation retries needed.'])
     ].join('\n');
     fs.writeFileSync(todoFile, todoContent);
     log(`Wrote untouched-route checklist to ${todoFile}`);

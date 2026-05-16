@@ -73,11 +73,13 @@ What it does:
 6. Generates:
    - `recordings/e2e-session-*.json`
    - `tests-playwright/advanced-generated-*.spec.js`
-   - `tests-playwright/advanced-generated-per-link-*.spec.js` (one test per touched route/link)
+   - `tests-playwright/advanced-generated-per-link-*.spec.js` (one test per touched matched/unmatched internal link)
 7. Writes errors to:
    - `storage/logs/e2e-recording.log`
-8. Writes untouched route checklist to:
-   - `todo.txt`
+8. Writes unmatched discovered links to:
+   - `storage/logs/unmatched-links.log`
+9. Writes untouched route checklist to:
+   - `todo.txt` (includes untouched routes, unmatched links, and generation retry items)
 
 ## Manual recording workflow
 

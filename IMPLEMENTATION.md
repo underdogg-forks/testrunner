@@ -25,9 +25,10 @@ This workflow:
 - fills forms with dummy values and attempts submission,
 - records route/link/form/network activity,
 - generates Playwright output from the resulting recording,
-- generates a one-test-per-touched-route Playwright spec file,
+- generates a one-test-per-touched-link Playwright spec file (matched and unmatched internal links),
 - writes error details to `storage/logs/e2e-recording.log`,
-- writes untouched route checklist to `todo.txt`.
+- writes unmatched discovered links to `storage/logs/unmatched-links.log`,
+- writes `todo.txt` with untouched route checklist plus generation retry items.
 
 ## Current scripts
 
