@@ -34,6 +34,10 @@ function escapeCssAttributeValue(value) {
     .replace(/"/g, '\\"');
 }
 
+function escapeCssId(value) {
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, (char) => `\\${char}`);
+}
+
 async function run() {
   const args = process.argv.slice(2);
   const getArg = (name) => {
@@ -161,12 +165,9 @@ async function run() {
         page.click(submitSelector)
       ]);
       log(`Authenticated using ${loginUrl}`);
-      try {
-        await page.goto(`${baseUrl}${dashboardUrl}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
-        log(`Reached dashboard at ${dashboardUrl}`);
-      } catch (error) {
-        recordProblem('dashboard', error);
-      }
+      await page.goto(`${baseUrl}${dashboardUrl}`, { waitUntil: 'domcontentloaded', timeout: 15000 })
+        .then(() => log(`Reached dashboard at ${dashboardUrl}`))
+        .catch((error) => log(`Could not reach dashboard (${dashboardUrl}): ${error.message}`, 'WARN'));
     } catch (error) {
       recordProblem('login', error);
       log('Continuing without confirmed authenticated state');
@@ -177,15 +178,13 @@ async function run() {
         return Array.from(document.querySelectorAll('a[href]')).map((a) => ({
           href: a.href,
           text: (a.innerText || a.textContent || '').trim().slice(0, 160),
-          id: a.id || '',
-          className: typeof a.className === 'string' ? a.className : ''
+          id: a.id || ''
         }));
       });
 
       const unique = new Set();
       const internalLinks = [];
-      for (const entry of urls) {
-        if (internalLinks.length >= maxLinksPerPage) break;
+      for (const entry of urls.slice(0, maxLinksPerPage)) {
         const normalized = normalizeUrl(entry.href);
         if (!normalized || unique.has(normalized)) continue;
         unique.add(normalized);
@@ -322,10 +321,11 @@ async function run() {
         const discoveredLinks = await collectInternalLinks();
         for (const link of discoveredLinks) {
           const safeHref = escapeCssAttributeValue(link.href);
+          const safeId = escapeCssId(link.id);
           session.clicks.push({
             step,
             timestamp: new Date().toISOString(),
-            selector: link.id ? `#${link.id}` : `a[href="${safeHref}"]`,
+            selector: link.id ? `#${safeId}` : `a[href="${safeHref}"]`,
             text: link.text,
             tagName: 'A',
             href: link.href,
