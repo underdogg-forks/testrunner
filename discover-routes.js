@@ -22,6 +22,7 @@ class RouteDiscovery {
             emailSelector: 'input[name="email"], input[id="email"]',
             passwordSelector: 'input[name="password"], input[id="password"]',
             submitSelector: 'button[type="submit"], input[type="submit"]',
+            routeInventoryExclusions: ['_', 'api/', 'sanctum/csrf-cookie'],
             // ----------------------------------------
             ...options
         };
@@ -128,7 +129,7 @@ class RouteDiscovery {
         for (const route of parsed) {
             const uri = (route.uri || '').toString().trim();
             if (!uri) continue;
-            if (uri.startsWith('_') || uri.startsWith('api/') || uri === 'sanctum/csrf-cookie') continue;
+            if (this.shouldExcludeInventoryRoute(uri)) continue;
 
             const methodsRaw = route.method || route.methods || '';
             const methods = Array.isArray(methodsRaw)
@@ -138,7 +139,7 @@ class RouteDiscovery {
             if (!methods.includes('GET') && !methods.includes('HEAD')) continue;
 
             const normalizedUri = uri === '/' ? '' : `/${uri.replace(/^\/+/, '')}`;
-            const fullUrl = `${this.baseUrl}${normalizedUri}` || `${this.baseUrl}/`;
+            const fullUrl = normalizedUri ? `${this.baseUrl}${normalizedUri}` : `${this.baseUrl}/`;
             if (seen.has(fullUrl)) continue;
             seen.add(fullUrl);
 
@@ -151,6 +152,18 @@ class RouteDiscovery {
         }
 
         return discovered;
+    }
+
+    shouldExcludeInventoryRoute(uri) {
+        const exclusions = Array.isArray(this.options.routeInventoryExclusions)
+            ? this.options.routeInventoryExclusions
+            : [];
+        return exclusions.some(pattern => {
+            if (!pattern) return false;
+            if (pattern.endsWith('/')) return uri.startsWith(pattern);
+            if (pattern.startsWith('_')) return uri.startsWith(pattern);
+            return uri === pattern;
+        });
     }
 
     // =================================================================
@@ -616,13 +629,20 @@ async function main() {
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg.startsWith('--routes=')) {
-            routesFile = arg.split('=')[1];
-        } else if (arg === '--routes' && args[i + 1]) {
+            const value = arg.split('=').slice(1).join('=');
+            routesFile = value ? value.trim() : '';
+        } else if (arg === '--routes' && args[i + 1] && !args[i + 1].startsWith('--')) {
             routesFile = args[i + 1];
             i++;
         } else if (!arg.startsWith('--') && !process.env.BASE_URL) {
             baseUrl = arg;
         }
+    }
+
+    routesFile = typeof routesFile === 'string' ? routesFile.trim() : routesFile;
+    if (typeof routesFile === 'string' && routesFile.length === 0) {
+        console.error('❌ Error: --routes must include a non-empty file path.');
+        process.exit(1);
     }
     
     const options = {
