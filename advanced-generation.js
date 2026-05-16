@@ -446,7 +446,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
       log(`Generated one-test-per-link Playwright spec at ${perLinkOutputFile}`);
     } catch (error) {
       recordProblem('generate:playwright:per-link', error);
-      generationRetryList.push(`Re-generate per-link spec from ${recordingFile}`);
+      generationRetryList.push(`npm run generate:playwright:auto # per-link generation failed for ${recordingFile}`);
     }
 
     const untouchedRoutes = Array.from(routeChecklist).filter((route) => !touchedRouteChecklist.has(route));
@@ -455,7 +455,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     fs.writeFileSync(
       unmatchedLogFile,
       unmatchedLinks.length
-        ? unmatchedLinks.map((link) => `${link}\n`).join('')
+        ? `${unmatchedLinks.join('\n')}\n`
         : 'No unmatched internal links were discovered.\n'
     );
     log(`Wrote unmatched links to ${unmatchedLogFile}`);
