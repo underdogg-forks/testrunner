@@ -11,7 +11,7 @@ APP_URL=http://localhost:8000 ROUTES_JSON=routes.json npm run generate:playwrigh
 
 This generates module-based Playwright specs from known routes.
 
-### 2) Advanced login-aware traversal and generation
+### 2) Automatic login-aware traversal and generation
 
 ```bash
 npm run generate:playwright:auto
@@ -38,9 +38,20 @@ This workflow:
 5. `npm run discover` (crawler fallback or inventory-backed discovery)
 6. `npm run generate:playwright:routes` (inventory-only generation)
 7. `npm run generate:playwright:auto` (automatic traversal + generation)
-8. `npm run advanced.js` (legacy alias)
-9. `npm run advanced-generation` (same as above)
-10. `npm run adavanced-generation` (compatibility alias)
+
+## Makefile entrypoints
+
+For easier usage, the repository includes a `Makefile`:
+
+1. `make install`
+2. `make export-routes`
+3. `make auto` (recommended first run for automatic generation)
+4. `make generate-routes`
+5. `make discover`
+6. `make record`
+7. `make convert-playwright RECORDING=...`
+8. `make convert-phpunit RECORDING=...`
+9. `make playback RECORDING=...`
 
 ## Fallback mode
 

@@ -14,6 +14,33 @@ npm install
 npx playwright install chromium
 ```
 
+## Simplest path (no manual interaction)
+
+1. Export routes from Laravel:
+
+```bash
+php artisan route:list --json > routes.json
+```
+
+2. Create `.env`:
+
+```dotenv
+APP_URL=http://localhost:8000
+ROUTES_JSON=routes.json
+LOGIN_PATH=/login
+DASHBOARD_PATH=/dashboard
+E2E_EMAIL=admin@example.com
+E2E_PASSWORD=secret
+```
+
+3. Run automatic traversal + test generation:
+
+```bash
+make auto
+```
+
+This logs in, traverses links, fills forms with dummy values, generates Playwright tests, and writes untouched routes to `todo.txt`.
+
 ## Recommended Laravel workflow
 
 Export route inventory:
@@ -35,12 +62,6 @@ Run:
 ```bash
 npm run generate:playwright:auto
 ```
-
-Equivalent commands:
-
-- `npm run advanced.js` (legacy alias)
-- `npm run advanced-generation`
-- `npm run adavanced-generation` (compatibility alias)
 
 What it does:
 
@@ -97,6 +118,20 @@ npm run playback recordings/session-<timestamp>.json
 - `record-routes.js` (legacy lightweight click recorder)
 - `utils.js` (shared helpers)
 
+## Makefile commands
+
+Use `make help` to list commands:
+
+- `make install`
+- `make export-routes`
+- `make generate-routes`
+- `make auto`
+- `make discover`
+- `make record`
+- `make convert-playwright RECORDING=recordings/session-<timestamp>.json`
+- `make convert-phpunit RECORDING=recordings/session-<timestamp>.json`
+- `make playback RECORDING=recordings/session-<timestamp>.json`
+
 ## Configuration
 
 Common variables:
@@ -111,23 +146,6 @@ Common variables:
 - `MAX_LINKS_PER_PAGE` (default: `250`)
 
 The script loads variables from `.env` automatically if the file exists.
-
-Recommended `.env` for authenticated traversal:
-
-```dotenv
-APP_URL=http://localhost:8000
-ROUTES_JSON=routes.json
-LOGIN_PATH=/login
-DASHBOARD_PATH=/dashboard
-E2E_EMAIL=admin@example.com
-E2E_PASSWORD=secret
-```
-
-Then run:
-
-```bash
-npm run generate:playwright:auto
-```
 
 Manual recorder variables:
 
