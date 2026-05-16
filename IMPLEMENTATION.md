@@ -1,117 +1,59 @@
-# Implementation Summary
+# Implementation summary
 
-## Advanced Playwright-based Recording System for Automated Test Generation
+## Main route-inventory workflows
 
-### Problem Statement
-Implement an advanced Playwright-based recording system for automated test generation that can:
-- Record user interactions comprehensively
-- Generate tests for multiple frameworks (Playwright, PHPUnit, Jest)
-- Support session playback for debugging
-- Provide a complete workflow from recording to test execution
+### 1) Direct Playwright generation from Laravel routes
 
-### Solution Implemented
+```bash
+php artisan route:list --json > routes.json
+APP_URL=http://localhost:8000 ROUTES_JSON=routes.json npm run generate:playwright:routes
+```
 
-#### 1. Core Recording System ✅
-**File: `advanced-recording.js`**
-- Already existed and fully functional
-- Records clicks, form inputs, route changes, and network requests
-- Saves sessions as structured JSON with complete metadata
-- Configurable via environment variables
+This generates module-based Playwright specs from known routes.
 
-#### 2. Fixed Package Configuration ✅
-**File: `package.json`**
-- Fixed incorrect script reference: `record-advanced.js` → `advanced-recording.js`
-- All npm scripts now correctly reference existing files
-- Verified all scripts work properly
+### 2) Automatic login-aware traversal and generation
 
-#### 3. Created Missing Converter ✅
-**File: `convert-to-phpunit.js` (NEW)**
-- Converts recorded sessions to PHPUnit Feature tests
-- Generates proper Laravel test structure
-- Handles GET requests and form submissions
-- Creates test methods grouped by routes
-- Includes proper assertions based on network responses
-- Tested and verified with valid PHP syntax
+```bash
+npm run generate:playwright:auto
+```
 
-#### 4. Enhanced Playback Support ✅
-**File: `playback.js` (UPDATED)**
-- Previously only supported legacy format (clicks array)
-- Now supports both formats:
-  - Legacy: Simple clicks array
-  - Advanced: Full session object with timeline
-- Improved error handling and logging
-- Plays back all event types: routes, clicks, form data
+This workflow:
 
-#### 5. Comprehensive Documentation ✅
-**File: `README.md` (COMPLETELY REWRITTEN)**
-- Added feature overview and benefits
-- Documented all configuration options
-- Included usage examples for all scripts
-- Added code examples for generated tests
-- Created troubleshooting guide
-- Documented file structure and architecture
-- Included extension examples
+- logs in (default `/login`),
+- moves to dashboard (default `/dashboard`),
+- follows discovered internal links,
+- fills forms with dummy values and attempts submission,
+- records route/link/form/network activity,
+- generates Playwright output from the resulting recording,
+- generates a one-test-per-touched-link Playwright spec file (matched and unmatched internal links),
+- writes error details to `storage/logs/e2e-recording.log`,
+- writes unmatched discovered links to `storage/logs/unmatched-links.log`,
+- writes `todo.txt` with untouched route checklist plus generation retry items.
 
-#### 6. Proper .gitignore ✅
-**File: `.gitignore` (NEW)**
-- Excludes node_modules and package-lock.json
-- Excludes recordings, storage, and generated test directories
-- Prevents build artifacts from being committed
-- Includes IDE and OS-specific exclusions
+## Current scripts
 
-### Testing & Validation ✅
+1. `npm run record` (manual recording)
+2. `npm run convert:playwright <recording.json>`
+3. `npm run convert:phpunit <recording.json>`
+4. `npm run playback <recording.json>`
+5. `npm run discover` (crawler fallback or inventory-backed discovery)
+6. `npm run generate:playwright:routes` (inventory-only generation)
+7. `npm run generate:playwright:auto` (automatic traversal + generation)
 
-All components have been tested and verified:
+## Makefile entrypoints
 
-1. **Syntax Validation**
-   - ✅ All JavaScript files pass Node.js syntax check
-   - ✅ Generated Playwright tests have valid syntax
-   - ✅ Generated PHPUnit tests have valid PHP syntax
+For easier usage, the repository includes a `Makefile`:
 
-2. **Functional Testing**
-   - ✅ Playwright conversion: Creates valid test files
-   - ✅ PHPUnit conversion: Creates valid Laravel tests
-   - ✅ Playback: Supports both recording formats
-   - ✅ All npm scripts execute correctly
+1. `make install`
+2. `make export-routes`
+3. `make auto` (recommended first run for automatic generation)
+4. `make generate-routes`
+5. `make discover`
+6. `make record`
+7. `make convert-playwright RECORDING=...`
+8. `make convert-phpunit RECORDING=...`
+9. `make playback RECORDING=...`
 
-3. **Workflow Validation**
-   - ✅ Complete workflow tested: Record → Convert → Test
-   - ✅ Sample session successfully converted to both formats
-   - ✅ Generated tests are executable and properly structured
+## Fallback mode
 
-### Key Benefits
-
-1. **Multi-Framework Support**: Generate tests for Playwright, PHPUnit, and Jest
-2. **No Manual Test Writing**: Record once, generate tests automatically
-3. **Real User Data**: Uses actual form values and interaction sequences
-4. **Standard Tooling**: Leverages industry-standard test frameworks
-5. **Easy Customization**: Generated tests can be easily extended
-6. **Comprehensive Recording**: Captures clicks, forms, routes, and network requests
-
-### Files Modified/Created
-
-- ✅ Created: `.gitignore`
-- ✅ Created: `convert-to-phpunit.js`
-- ✅ Modified: `package.json` (fixed script reference)
-- ✅ Modified: `playback.js` (enhanced format support)
-- ✅ Modified: `README.md` (complete rewrite)
-
-### Minimal Changes Approach
-
-All changes were surgical and minimal:
-- Only fixed what was broken (package.json reference)
-- Only added what was missing (convert-to-phpunit.js)
-- Only enhanced what was incomplete (playback.js format support)
-- Preserved all existing working code
-- No deletions or removals of functional code
-
-### System Now Provides
-
-1. **Recording**: `npm run record` - Opens browser for user interaction recording
-2. **Conversion**: 
-   - `npm run convert:playwright <file>` - Generate Playwright tests
-   - `npm run convert:phpunit <file>` - Generate PHPUnit tests
-3. **Playback**: `npm run playback <file>` - Replay recorded sessions
-4. **Discovery**: `npm run discover` - Auto-discover routes and generate tests
-
-All functionality is documented, tested, and ready to use!
+If route inventory is not available, `npm run discover` remains available for crawler-based route inference.

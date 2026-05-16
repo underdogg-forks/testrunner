@@ -1,244 +1,157 @@
-# Playwright Test Recorder & Generator
+# Playwright test recorder and generator
 
-A comprehensive test automation system that records user interactions and automatically generates test code for multiple frameworks.
+This repository contains scripts to:
 
-## ✨ Features
+- record manual browser interactions,
+- generate Playwright/PHPUnit tests from recordings,
+- generate Playwright specs from Laravel route inventory,
+- run an advanced login-aware traversal that follows links, fills forms, and reports untouched routes.
 
-- **🎬 Session Recording**: Records clicks, form inputs, route changes, and network requests with detailed metadata
-- **🔄 Multi-Framework Test Generation**: Generate Playwright, PHPUnit, or Jest tests from a single recording
-- **📼 Session Playback**: Replay recorded sessions for debugging and validation
-- **🔍 Route Discovery**: Automatically crawl your app to discover routes and generate boilerplate tests
-- **📸 Optional Screenshots**: Capture screenshots at each interaction point
-- **📝 Human-Readable Logs**: Console logging for easy session review
-
-## 🚀 Quick Start
-
-### Installation
+## Install
 
 ```bash
-npm install --save-dev @playwright/test playwright jest
+npm install
+npx playwright install chromium
 ```
 
-### Record a Session
+## Simplest path (no manual interaction)
+
+1. Export routes from Laravel:
+
+```bash
+php artisan route:list --json > routes.json
+```
+
+2. Create `.env`:
+
+```dotenv
+APP_URL=http://localhost:8000
+ROUTES_JSON=routes.json
+LOGIN_PATH=/login
+DASHBOARD_PATH=/dashboard
+E2E_EMAIL=admin@example.com
+E2E_PASSWORD=secret
+```
+
+3. Run automatic traversal + test generation:
+
+```bash
+make auto
+```
+
+This logs in, traverses links, fills forms with dummy values, generates Playwright tests, and writes untouched routes to `todo.txt`.
+
+## Recommended Laravel workflow
+
+Export route inventory:
+
+```bash
+php artisan route:list --json > routes.json
+```
+
+Generate Playwright specs directly from known routes:
+
+```bash
+APP_URL=http://localhost:8000 ROUTES_JSON=routes.json npm run generate:playwright:routes
+```
+
+## Automatic traversal from routes.json
+
+Run:
+
+```bash
+npm run generate:playwright:auto
+```
+
+What it does:
+
+1. Logs in with Playwright.
+2. Navigates to dashboard (`/dashboard` by default).
+3. Loads links from pages and matches coverage against `routes.json`.
+4. Follows discovered internal links and records them.
+5. Fills forms with dummy data and tries submit actions.
+6. Generates:
+   - `recordings/e2e-session-*.json`
+   - `tests-playwright/advanced-generated-*.spec.js`
+   - `tests-playwright/advanced-generated-per-link-*.spec.js` (one test per touched matched/unmatched internal link)
+7. Writes errors to:
+   - `storage/logs/e2e-recording.log`
+8. Writes unmatched discovered links to:
+   - `storage/logs/unmatched-links.log`
+9. Writes untouched route checklist to:
+   - `todo.txt` (includes untouched routes, unmatched links, and generation retry items)
+
+## Manual recording workflow
 
 ```bash
 npm run record
-# Browser opens - interact with your app
-# Press Ctrl+C when done
 ```
 
-Recording is saved to `recordings/session-[timestamp].json`
+This is manual recording only. It records what you click/type and does not auto-crawl routes.
 
-### Generate Tests
+Output:
 
-**Playwright Tests:**
-```bash
-npm run convert:playwright recordings/session-[timestamp].json
-# Creates: tests-playwright/generated-test-[timestamp].spec.js
-```
+- `recordings/session-*.json`
+- `storage/logs/console.log`
 
-**PHPUnit Tests:**
-```bash
-npm run convert:phpunit recordings/session-[timestamp].json
-# Creates: tests/Feature/GeneratedTest[timestamp].php
-```
-
-### Replay Session
+Convert manual recordings:
 
 ```bash
-npm run playback recordings/session-[timestamp].json
+npm run convert:playwright recordings/session-<timestamp>.json
+npm run convert:phpunit recordings/session-<timestamp>.json
 ```
 
-## 📋 What Gets Recorded
-
-| Category | Details |
-|----------|---------|
-| **User Interactions** | Clicks (with selectors, text, position), form inputs (names, values, types), form submissions |
-| **Navigation** | URL changes, SPA route transitions, full navigation history |
-| **Network Activity** | POST/PUT/PATCH/DELETE requests with payloads, headers, and responses |
-| **Session Metadata** | Start/end times, duration, user agent, viewport size, complete timeline |
-
-## ⚙️ Configuration
-
-Configure recording behavior with environment variables:
+Replay a recording:
 
 ```bash
-# Set start URL (default: http://localhost:3000)
-START_URL=http://localhost:8000 npm run record
-
-# Set max duration in milliseconds (default: 300000 = 5 minutes)
-MAX_DURATION=600000 npm run record
-
-# Disable network recording
-RECORD_NETWORK=false npm run record
-
-# Enable screenshot capture
-CAPTURE_SCREENSHOTS=true npm run record
+npm run playback recordings/session-<timestamp>.json
 ```
 
-## 📂 Project Structure
+## Script reference
 
-```
-testrunner/
-├── advanced-recording.js      # Main recording script
-├── convert-to-playwright.js   # Playwright test generator
-├── convert-to-phpunit.js      # PHPUnit test generator  
-├── playback.js                # Session playback script
-├── discover-routes.js         # Route discovery (Jest/Playwright)
-├── discover-phpunit.js        # Route discovery (PHPUnit)
-├── utils.js                   # Shared utility functions
-├── package.json               # NPM configuration
-├── recordings/                # Recorded sessions (JSON)
-├── tests/                     # Generated PHPUnit tests
-├── tests-playwright/          # Generated Playwright tests
-└── storage/logs/              # Session logs
-```
+- `advanced-recording.js` → `npm run record`
+- `advanced-generation.js` → `npm run generate:playwright:auto`
+- `generate-playwright-from-routes.js` → `npm run generate:playwright:routes`
+- `discover-routes.js` → `npm run discover`
+- `discover-phpunit.js`
+- `convert-to-playwright.js` → `npm run convert:playwright <recording.json>`
+- `convert-to-phpunit.js` → `npm run convert:phpunit <recording.json>`
+- `playback.js` → `npm run playback <recording.json>`
+- `record-routes.js` (legacy lightweight click recorder)
+- `utils.js` (shared helpers)
 
-## 📝 Generated Test Examples
+## Makefile commands
 
-### Playwright Test
+Use `make help` to list commands:
 
-```javascript
-import { test, expect } from '@playwright/test';
+- `make install`
+- `make export-routes`
+- `make generate-routes`
+- `make auto`
+- `make discover`
+- `make record`
+- `make convert-playwright RECORDING=recordings/session-<timestamp>.json`
+- `make convert-phpunit RECORDING=recordings/session-<timestamp>.json`
+- `make playback RECORDING=recordings/session-<timestamp>.json`
 
-test.describe('Recorded User Session', () => {
-  test('should replay user interactions', async ({ page }) => {
-    // Step 1: Navigate to /login
-    await test.step('Navigate to /login', async () => {
-      await page.goto('http://localhost:3000/login');
-      await page.waitForLoadState('networkidle');
-    });
+## Configuration
 
-    // Step 2: Fill "email" with "test@example.com"
-    await test.step('Fill email', async () => {
-      await page.locator('[name=\'email\']').fill('test@example.com');
-    });
+Common variables:
 
-    // Step 3: Click "Sign In"
-    await test.step('Click "Sign In"', async () => {
-      const element = page.locator('button[type=\'submit\']').first();
-      await element.waitFor({ state: 'visible', timeout: 10000 });
-      await element.click();
-      await page.waitForLoadState('networkidle');
-    });
-  });
-});
-```
+- `APP_URL` (`BASE_URL` alias; default: `http://localhost:3000`)
+- `ROUTES_JSON` (`ROUTES_FILE` alias; required for route-inventory workflows)
+- `LOGIN_PATH` (`LOGIN_URL` alias; default: `/login`)
+- `DASHBOARD_PATH` (`DASHBOARD_URL` alias; default: `/dashboard`)
+- `E2E_EMAIL` (`TEST_EMAIL` alias)
+- `E2E_PASSWORD` (`TEST_PASSWORD` alias)
+- `HEADLESS` (`true`/`false`)
+- `MAX_LINKS_PER_PAGE` (default: `250`)
 
-**Run it:**
-```bash
-npx playwright test tests-playwright/generated-test-*.spec.js
-npx playwright test --headed  # Run with visible browser
-npx playwright test --debug   # Debug mode
-```
+The script loads variables from `.env` automatically if the file exists.
 
-### PHPUnit Test
+Manual recorder variables:
 
-```php
-class GeneratedTest extends TestCase
-{
-    public function test_login(): void
-    {
-        // Submit form with recorded data
-        $response = $this->actingAs($this->user)->post('/login', [
-            'email' => 'test@example.com',
-            'password' => 'password123',
-        ]);
-
-        $response->assertSessionHasNoErrors();
-        $response->assertStatus(302);
-    }
-}
-```
-
-**Run it:**
-```bash
-php artisan test                                    # All tests
-php artisan test tests/Feature/GeneratedTest*.php  # Specific test
-php artisan test --verbose                         # Verbose output
-```
-
-## 🔍 Route Discovery (Alternative Workflow)
-
-Automatically discover routes and generate boilerplate tests:
-
-```bash
-npm run discover
-```
-
-This crawls your application and creates:
-- `tests/*.test.js` (Jest tests)
-- `tests-playwright/*.spec.js` (Playwright tests)
-- Configuration files for both frameworks
-
-## 🎯 Benefits
-
-| Benefit | Description |
-|---------|-------------|
-| **Precision** | Captures actual user behavior, real data values, and exact interaction sequences |
-| **Speed** | Generate complete tests in seconds with no manual writing required |
-| **Flexibility** | Multiple output formats, easy customization, works with any web application |
-| **Standard Tooling** | Uses industry-standard frameworks with full IDE support and debugging |
-| **Scalability** | Record once, generate many tests; easy to maintain and update |
-
-## 🛠️ Extending Generated Tests
-
-Generated tests are fully editable. Enhance them with:
-
-**Custom assertions:**
-```javascript
-await expect(page.locator('.user-name')).toContainText('Test User');
-await expect(page).toHaveURL(/.*dashboard/);
-```
-
-**Setup/teardown:**
-```javascript
-test.beforeEach(async ({ page }) => {
-  // Login before each test
-  await page.goto('/login');
-  // ... login steps
-});
-```
-
-**Database verification (PHPUnit):**
-```php
-$this->assertDatabaseHas('posts', ['title' => 'Test Post']);
-```
-
-## 📊 Recording Format
-
-Sessions are saved as JSON:
-
-```json
-{
-  "metadata": {
-    "startTime": "ISO timestamp",
-    "startUrl": "http://...",
-    "userAgent": "...",
-    "viewport": { "width": 1280, "height": 720 },
-    "duration": 150000
-  },
-  "clicks": [...],
-  "routes": [...],
-  "formData": [...],
-  "networkRequests": [...],
-  "screenshots": [...]
-}
-```
-
-## 🐛 Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| **Browser doesn't open** | Ensure Playwright is installed: `npm install playwright`<br>Verify START_URL is accessible |
-| **Generated tests fail** | Check selector stability (prefer IDs over classes)<br>Add proper waits in tests<br>Verify app is running at correct URL |
-| **Recording times out** | Increase MAX_DURATION environment variable<br>Or manually stop with Ctrl+C |
-| **Conversion fails** | Verify recording file exists and is valid JSON<br>Check file format matches expected structure |
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-This project is open source and available under the MIT License.
+- `START_URL`
+- `MAX_DURATION`
+- `RECORD_NETWORK`
+- `CAPTURE_SCREENSHOTS`

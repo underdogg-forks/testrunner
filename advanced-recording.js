@@ -17,6 +17,10 @@ const path = require('path');
  * 2. Replay user sessions for debugging
  * 3. Analyze user workflows and data flow
  * 4. Create documentation of application behavior
+ *
+ * Note:
+ * - This is a manual recorder (it captures your actions).
+ * - It does not auto-crawl or auto-click all application routes.
  * 
  * @usage
  * npm run record

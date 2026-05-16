@@ -1,5 +1,6 @@
 const { chromium, errors } = require('playwright');
 const fs = require('fs');
+const path = require('path');
 
 /**
  * A class to launch a browser, crawl an application, discover routes,
@@ -21,6 +22,7 @@ class RouteDiscovery {
             emailSelector: 'input[name="email"], input[id="email"]',
             passwordSelector: 'input[name="password"], input[id="password"]',
             submitSelector: 'button[type="submit"], input[type="submit"]',
+            routeInventoryExclusions: ['_', 'api/', 'sanctum/csrf-cookie'],
             // ----------------------------------------
             ...options
         };
@@ -32,6 +34,26 @@ class RouteDiscovery {
     // =================================================================
 
     async discover() {
+        if (this.options.routesFile) {
+            const routes = this.loadLaravelRoutesFromJson(this.options.routesFile);
+            console.log(`\nUsing route inventory from ${this.options.routesFile}...`);
+            console.log(`\nDiscovered ${routes.length} unique routes.`);
+
+            const moduleGroups = this.groupByModule(routes);
+            console.log(`\n\x1b[35m--- Routes by Module ---\x1b[0m`);
+            for (const [module, moduleRoutes] of Object.entries(moduleGroups)) {
+                const accessibleRoutes = moduleRoutes.filter(r => r.type !== 'ajax');
+                if (accessibleRoutes.length > 0) {
+                    console.log(`\x1b[36m${module} (${accessibleRoutes.length} accessible routes):\x1b[0m`);
+                    accessibleRoutes.forEach(r => console.log(`  - [${r.type.toUpperCase()}] ${r.url.replace(this.baseUrl, '') || '/'}`));
+                }
+            }
+            console.log(`\x1b[35m------------------------\x1b[0m`);
+
+            await this.generateTests(routes);
+            return;
+        }
+
         let browser;
         let context;
         try {
@@ -67,7 +89,6 @@ class RouteDiscovery {
         await this.login(page);
 
         console.log(`\nStarting route crawl from ${this.baseUrl}...`);
-        
         // Use the authenticated page to start crawling
         const routes = await this.crawlRoutes(page);
         
@@ -88,6 +109,61 @@ class RouteDiscovery {
         await this.generateTests(routes);
         
         return routes;
+    }
+
+    loadLaravelRoutesFromJson(routesFile) {
+        const absolutePath = path.isAbsolute(routesFile) ? routesFile : path.resolve(process.cwd(), routesFile);
+        if (!fs.existsSync(absolutePath)) {
+            throw new Error(`Routes file not found: ${absolutePath}`);
+        }
+
+        const raw = fs.readFileSync(absolutePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            throw new Error('Expected Laravel route:list JSON output to be an array');
+        }
+
+        const discovered = [];
+        const seen = new Set();
+
+        for (const route of parsed) {
+            const uri = (route.uri || '').toString().trim();
+            if (!uri) continue;
+            if (this.shouldExcludeInventoryRoute(uri)) continue;
+
+            const methodsRaw = route.method || route.methods || '';
+            const methods = Array.isArray(methodsRaw)
+                ? methodsRaw.map(m => String(m).toUpperCase())
+                : String(methodsRaw).split('|').map(m => m.trim().toUpperCase()).filter(Boolean);
+
+            if (!methods.includes('GET') && !methods.includes('HEAD')) continue;
+
+            const normalizedUri = uri === '/' ? '' : `/${uri.replace(/^\/+/, '')}`;
+            const fullUrl = normalizedUri ? `${this.baseUrl}${normalizedUri}` : `${this.baseUrl}/`;
+            if (seen.has(fullUrl)) continue;
+            seen.add(fullUrl);
+
+            discovered.push({
+                url: fullUrl,
+                type: this.determineRouteType(fullUrl),
+                module: this.extractModule(fullUrl),
+                methods
+            });
+        }
+
+        return discovered;
+    }
+
+    shouldExcludeInventoryRoute(uri) {
+        const exclusions = Array.isArray(this.options.routeInventoryExclusions)
+            ? this.options.routeInventoryExclusions
+            : [];
+        return exclusions.some(pattern => {
+            if (!pattern) return false;
+            if (pattern.endsWith('/')) return uri.startsWith(pattern);
+            if (pattern.startsWith('_')) return uri.startsWith(pattern);
+            return uri === pattern;
+        });
     }
 
     // =================================================================
@@ -546,22 +622,67 @@ ${tests}
 
 // Usage
 async function main() {
-    const baseUrl = process.argv[2] || 'http://localhost:3000';
+    const dotEnvPath = path.resolve('.env');
+    if (fs.existsSync(dotEnvPath)) {
+        for (const rawLine of fs.readFileSync(dotEnvPath, 'utf8').split(/\r?\n/)) {
+            const line = rawLine.trim();
+            if (!line || line.startsWith('#')) continue;
+            const idx = line.indexOf('=');
+            if (idx === -1) continue;
+            const key = line.slice(0, idx).trim();
+            let value = line.slice(idx + 1).trim();
+            if (!key || process.env[key] !== undefined) continue;
+            if (
+                (value.startsWith('"') && value.endsWith('"')) ||
+                (value.startsWith('\'') && value.endsWith('\''))
+            ) {
+                value = value.slice(1, -1);
+            }
+            process.env[key] = value;
+        }
+    }
+
+    const args = process.argv.slice(2);
+    let baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
+    let routesFile = process.env.ROUTES_JSON || process.env.ROUTES_FILE;
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg.startsWith('--routes=')) {
+            const value = arg.split('=').slice(1).join('=');
+            routesFile = value ? value.trim() : '';
+        } else if (arg === '--routes' && args[i + 1] && !args[i + 1].startsWith('--')) {
+            routesFile = args[i + 1];
+            i++;
+        } else if (!arg.startsWith('--') && !process.env.APP_URL && !process.env.BASE_URL) {
+            baseUrl = arg;
+        }
+    }
+
+    routesFile = typeof routesFile === 'string' ? routesFile.trim() : routesFile;
+    if (typeof routesFile === 'string' && routesFile.length === 0) {
+        console.error('❌ Error: --routes must include a non-empty file path.');
+        process.exit(1);
+    }
     
     const options = {
-        email: process.env.TEST_EMAIL || 'a@a.com',
-        password: process.env.TEST_PASSWORD || 'demopassword',
+        email: process.env.E2E_EMAIL || process.env.TEST_EMAIL || 'a@a.com',
+        password: process.env.E2E_PASSWORD || process.env.TEST_PASSWORD || 'demopassword',
         browserOptions: { headless: process.env.HEADLESS !== 'false' },
         emailSelector: process.env.EMAIL_SELECTOR,
         passwordSelector: process.env.PASSWORD_SELECTOR,
         submitSelector: process.env.SUBMIT_SELECTOR,
-        loginUrl: process.env.LOGIN_URL
+        loginUrl: process.env.LOGIN_PATH || process.env.LOGIN_URL,
+        routesFile
     };
 
     const discovery = new RouteDiscovery(baseUrl, options);
     
     console.log(`\n\x1b[34m--- Filament Route Discovery Tool ---\x1b[0m`);
     console.log(`\x1b[33mBase URL:\x1b[0m ${baseUrl}`);
+    if (routesFile) {
+        console.log(`\x1b[33mRoutes file:\x1b[0m ${routesFile}`);
+    }
     
     await discovery.discover();
     
