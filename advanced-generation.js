@@ -38,7 +38,30 @@ function escapeCssId(value) {
   return String(value).replace(/[^a-zA-Z0-9_-]/g, (char) => `\\${char}`);
 }
 
+function loadDotEnv(dotEnvPath) {
+  if (!fs.existsSync(dotEnvPath)) return;
+  const content = fs.readFileSync(dotEnvPath, 'utf8');
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const equalIndex = line.indexOf('=');
+    if (equalIndex === -1) continue;
+    const key = line.slice(0, equalIndex).trim();
+    let value = line.slice(equalIndex + 1).trim();
+    if (!key || process.env[key] !== undefined) continue;
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith('\'') && value.endsWith('\''))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+
 async function run() {
+  loadDotEnv(path.resolve('.env'));
+
   const args = process.argv.slice(2);
   const getArg = (name) => {
     const exact = `--${name}`;
@@ -50,12 +73,12 @@ async function run() {
     return '';
   };
 
-  const baseUrl = (getArg('baseUrl') || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-  const routesFile = getArg('routes') || process.env.ROUTES_FILE || '';
-  const loginUrl = getArg('loginUrl') || process.env.LOGIN_URL || '/login';
-  const dashboardUrl = getArg('dashboardUrl') || process.env.DASHBOARD_URL || '/dashboard';
-  const email = getArg('email') || process.env.TEST_EMAIL || 'a@a.com';
-  const password = getArg('password') || process.env.TEST_PASSWORD || 'demopassword';
+  const baseUrl = (getArg('baseUrl') || process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const routesFile = getArg('routes') || process.env.ROUTES_JSON || process.env.ROUTES_FILE || '';
+  const loginUrl = getArg('loginUrl') || process.env.LOGIN_PATH || process.env.LOGIN_URL || '/login';
+  const dashboardUrl = getArg('dashboardUrl') || process.env.DASHBOARD_PATH || process.env.DASHBOARD_URL || '/dashboard';
+  const email = getArg('email') || process.env.E2E_EMAIL || process.env.TEST_EMAIL || 'a@a.com';
+  const password = getArg('password') || process.env.E2E_PASSWORD || process.env.TEST_PASSWORD || 'demopassword';
   const emailSelector = getArg('emailSelector') || process.env.EMAIL_SELECTOR || 'input[name="email"], input[id="email"]';
   const passwordSelector = getArg('passwordSelector') || process.env.PASSWORD_SELECTOR || 'input[name="password"], input[id="password"]';
   const submitSelector = getArg('submitSelector') || process.env.SUBMIT_SELECTOR || 'button[type="submit"], input[type="submit"]';
@@ -63,7 +86,7 @@ async function run() {
   const maxLinksPerPage = Number(getArg('maxLinksPerPage') || process.env.MAX_LINKS_PER_PAGE || 250);
 
   if (!routesFile.trim()) {
-    console.error('❌ Error: Provide routes inventory using ROUTES_FILE or --routes.');
+    console.error('❌ Error: Provide routes inventory using ROUTES_JSON, ROUTES_FILE, or --routes.');
     process.exit(1);
   }
 
@@ -114,10 +137,10 @@ async function run() {
 
     const spec = `import { test } from '@playwright/test';
 
-const BASE_URL = process.env.BASE_URL || ${literal(baseUrl)};
-const LOGIN_URL = process.env.LOGIN_URL || ${literal(loginUrl)};
-const TEST_EMAIL = process.env.TEST_EMAIL || ${literal(email)};
-const TEST_PASSWORD = process.env.TEST_PASSWORD || ${literal(password)};
+const BASE_URL = process.env.APP_URL || process.env.BASE_URL || ${literal(baseUrl)};
+const LOGIN_URL = process.env.LOGIN_PATH || process.env.LOGIN_URL || ${literal(loginUrl)};
+const TEST_EMAIL = process.env.E2E_EMAIL || process.env.TEST_EMAIL || ${literal(email)};
+const TEST_PASSWORD = process.env.E2E_PASSWORD || process.env.TEST_PASSWORD || ${literal(password)};
 const EMAIL_SELECTOR = process.env.EMAIL_SELECTOR || ${literal(emailSelector)};
 const PASSWORD_SELECTOR = process.env.PASSWORD_SELECTOR || ${literal(passwordSelector)};
 const SUBMIT_SELECTOR = process.env.SUBMIT_SELECTOR || ${literal(submitSelector)};

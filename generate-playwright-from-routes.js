@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const { RouteDiscovery } = require('./discover-routes');
 
 /**
@@ -9,9 +10,26 @@ const { RouteDiscovery } = require('./discover-routes');
  *   node generate-playwright-from-routes.js --baseUrl http://localhost:8000 --routes routes.json
  */
 async function main() {
+  const dotEnvPath = path.resolve('.env');
+  if (fs.existsSync(dotEnvPath)) {
+    for (const rawLine of fs.readFileSync(dotEnvPath, 'utf8').split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const idx = line.indexOf('=');
+      if (idx === -1) continue;
+      const key = line.slice(0, idx).trim();
+      let value = line.slice(idx + 1).trim();
+      if (!key || process.env[key] !== undefined) continue;
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith('\'') && value.endsWith('\''))) {
+        value = value.slice(1, -1);
+      }
+      process.env[key] = value;
+    }
+  }
+
   const args = process.argv.slice(2);
-  let baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-  let routesFile = process.env.ROUTES_FILE;
+  let baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000';
+  let routesFile = process.env.ROUTES_JSON || process.env.ROUTES_FILE;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -31,17 +49,17 @@ async function main() {
   }
 
   if (typeof routesFile !== 'string' || routesFile.trim().length === 0) {
-    console.error('❌ Error: Provide a Laravel routes JSON file via ROUTES_FILE or --routes.');
+    console.error('❌ Error: Provide a Laravel routes JSON file via ROUTES_JSON, ROUTES_FILE, or --routes.');
     process.exit(1);
   }
 
   const discovery = new RouteDiscovery(baseUrl, {
-    email: process.env.TEST_EMAIL || 'a@a.com',
-    password: process.env.TEST_PASSWORD || 'demopassword',
+    email: process.env.E2E_EMAIL || process.env.TEST_EMAIL || 'a@a.com',
+    password: process.env.E2E_PASSWORD || process.env.TEST_PASSWORD || 'demopassword',
     emailSelector: process.env.EMAIL_SELECTOR,
     passwordSelector: process.env.PASSWORD_SELECTOR,
     submitSelector: process.env.SUBMIT_SELECTOR,
-    loginUrl: process.env.LOGIN_URL
+    loginUrl: process.env.LOGIN_PATH || process.env.LOGIN_URL
   });
 
   const routes = discovery.loadLaravelRoutesFromJson(routesFile);

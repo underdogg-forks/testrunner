@@ -6,7 +6,7 @@
 
 ```bash
 php artisan route:list --json > routes.json
-BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run generate:playwright:routes
+APP_URL=http://localhost:8000 ROUTES_JSON=routes.json npm run generate:playwright:routes
 ```
 
 This generates module-based Playwright specs from known routes.
@@ -14,7 +14,7 @@ This generates module-based Playwright specs from known routes.
 ### 2) Advanced login-aware traversal and generation
 
 ```bash
-BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run advanced.js
+npm run generate:playwright:auto
 ```
 
 This workflow:
@@ -37,9 +37,10 @@ This workflow:
 4. `npm run playback <recording.json>`
 5. `npm run discover` (crawler fallback or inventory-backed discovery)
 6. `npm run generate:playwright:routes` (inventory-only generation)
-7. `npm run advanced.js` (advanced traversal + generation)
-8. `npm run advanced-generation` (same as above)
-9. `npm run adavanced-generation` (compatibility alias)
+7. `npm run generate:playwright:auto` (automatic traversal + generation)
+8. `npm run advanced.js` (legacy alias)
+9. `npm run advanced-generation` (same as above)
+10. `npm run adavanced-generation` (compatibility alias)
 
 ## Fallback mode
 

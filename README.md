@@ -25,19 +25,20 @@ php artisan route:list --json > routes.json
 Generate Playwright specs directly from known routes:
 
 ```bash
-BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run generate:playwright:routes
+APP_URL=http://localhost:8000 ROUTES_JSON=routes.json npm run generate:playwright:routes
 ```
 
-## Advanced automatic traversal from routes.json
+## Automatic traversal from routes.json
 
 Run:
 
 ```bash
-BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run advanced.js
+npm run generate:playwright:auto
 ```
 
 Equivalent commands:
 
+- `npm run advanced.js` (legacy alias)
 - `npm run advanced-generation`
 - `npm run adavanced-generation` (compatibility alias)
 
@@ -86,7 +87,7 @@ npm run playback recordings/session-<timestamp>.json
 ## Script reference
 
 - `advanced-recording.js` → `npm run record`
-- `advanced-generation.js` → `npm run advanced.js`
+- `advanced-generation.js` → `npm run generate:playwright:auto`
 - `generate-playwright-from-routes.js` → `npm run generate:playwright:routes`
 - `discover-routes.js` → `npm run discover`
 - `discover-phpunit.js`
@@ -100,25 +101,32 @@ npm run playback recordings/session-<timestamp>.json
 
 Common variables:
 
-- `BASE_URL` (default: `http://localhost:3000`)
-- `ROUTES_FILE` (required for route-inventory workflows)
-- `LOGIN_URL` (default: `/login`)
-- `DASHBOARD_URL` (default: `/dashboard`)
-- `TEST_EMAIL`
-- `TEST_PASSWORD`
+- `APP_URL` (`BASE_URL` alias; default: `http://localhost:3000`)
+- `ROUTES_JSON` (`ROUTES_FILE` alias; required for route-inventory workflows)
+- `LOGIN_PATH` (`LOGIN_URL` alias; default: `/login`)
+- `DASHBOARD_PATH` (`DASHBOARD_URL` alias; default: `/dashboard`)
+- `E2E_EMAIL` (`TEST_EMAIL` alias)
+- `E2E_PASSWORD` (`TEST_PASSWORD` alias)
 - `HEADLESS` (`true`/`false`)
 - `MAX_LINKS_PER_PAGE` (default: `250`)
 
-Recommended full command for authenticated traversal:
+The script loads variables from `.env` automatically if the file exists.
+
+Recommended `.env` for authenticated traversal:
+
+```dotenv
+APP_URL=http://localhost:8000
+ROUTES_JSON=routes.json
+LOGIN_PATH=/login
+DASHBOARD_PATH=/dashboard
+E2E_EMAIL=admin@example.com
+E2E_PASSWORD=secret
+```
+
+Then run:
 
 ```bash
-BASE_URL=http://localhost:8000 \
-ROUTES_FILE=routes.json \
-LOGIN_URL=/login \
-TEST_EMAIL=admin@example.com \
-TEST_PASSWORD=secret \
-DASHBOARD_URL=/dashboard \
-npm run advanced.js
+npm run generate:playwright:auto
 ```
 
 Manual recorder variables:
