@@ -30,7 +30,7 @@ npm run record
 
 Recording is saved to `recordings/session-[timestamp].json`
 
-### Known Routes Workflow (Recommended)
+### Known Routes Workflow (Recommended for Laravel)
 
 For Laravel apps, export routes first and treat them as the source of truth:
 
@@ -38,8 +38,13 @@ For Laravel apps, export routes first and treat them as the source of truth:
 php artisan route:list --json > routes.json
 ```
 
-Then use the `record` action against those known routes to capture the test flows you want to generate.  
-This avoids blind crawling and keeps recordings aligned with your application's real route table.
+Then generate Playwright tests directly from that route inventory:
+
+```bash
+BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run discover
+```
+
+This uses your Laravel route table as the route source and generates module-based Playwright specs in `tests-playwright/`.
 
 ### Generate Tests
 
@@ -172,7 +177,7 @@ php artisan test --verbose                         # Verbose output
 
 ## 🔍 Route Discovery (Fallback for Exotic/Non-Laravel Apps)
 
-If your app cannot provide routes upfront (for example, exotic or non-Laravel stacks), use discovery:
+If your app cannot provide routes upfront (for example, exotic or non-Laravel stacks), use crawler-based discovery:
 
 ```bash
 npm run discover

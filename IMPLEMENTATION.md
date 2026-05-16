@@ -4,7 +4,7 @@
 
 ### Primary Workflow
 
-This implementation assumes routes are already known and uses that route inventory as the input to recording.
+This implementation supports routes already being known and uses route inventory as the input to test generation.
 
 For Laravel applications, route inventory is obtained directly from Artisan:
 
@@ -12,7 +12,13 @@ For Laravel applications, route inventory is obtained directly from Artisan:
 php artisan route:list --json > routes.json
 ```
 
-The `record` action is then used to capture real user interactions for those known routes, and the resulting session files are converted into test files (Playwright/PHPUnit).
+The route inventory can be passed directly into the discover/generator flow:
+
+```bash
+BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run discover
+```
+
+This generates Playwright tests from the Laravel route inventory without relying on crawler inference.
 
 ### Why this is the default
 
@@ -22,7 +28,7 @@ The `record` action is then used to capture real user interactions for those kno
 
 ### Fallback Workflow for Exotic / Non-Laravel Apps
 
-When a route list is not available (exotic or non-Laravel applications), route discovery remains supported:
+When a route list is not available (exotic or non-Laravel applications), crawler-based route discovery remains supported:
 
 - `npm run discover`
 
