@@ -9,6 +9,7 @@
     "discover": "node discover-routes.js",
     "generate:playwright:routes": "node generate-playwright-from-routes.js",
     "advanced-generation": "node advanced-generation.js",
+    "advanced.js": "node advanced-generation.js",
     "adavanced-generation": "node advanced-generation.js"
   },
   "devDependencies": {

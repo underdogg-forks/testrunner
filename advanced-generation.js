@@ -43,13 +43,13 @@ async function run() {
   const baseUrl = (getArg('baseUrl') || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
   const routesFile = getArg('routes') || process.env.ROUTES_FILE || '';
   const loginUrl = getArg('loginUrl') || process.env.LOGIN_URL || '/login';
+  const dashboardUrl = getArg('dashboardUrl') || process.env.DASHBOARD_URL || '/dashboard';
   const email = getArg('email') || process.env.TEST_EMAIL || 'a@a.com';
   const password = getArg('password') || process.env.TEST_PASSWORD || 'demopassword';
   const emailSelector = getArg('emailSelector') || process.env.EMAIL_SELECTOR || 'input[name="email"], input[id="email"]';
   const passwordSelector = getArg('passwordSelector') || process.env.PASSWORD_SELECTOR || 'input[name="password"], input[id="password"]';
   const submitSelector = getArg('submitSelector') || process.env.SUBMIT_SELECTOR || 'button[type="submit"], input[type="submit"]';
   const headless = (process.env.HEADLESS || 'true') !== 'false';
-  const maxAutoClicksPerPage = Number(process.env.MAX_AUTO_CLICKS_PER_PAGE || 4);
 
   if (!routesFile.trim()) {
     console.error('❌ Error: Provide routes inventory using ROUTES_FILE or --routes.');
@@ -77,6 +77,7 @@ async function run() {
       startUrl: baseUrl,
       baseUrl,
       routesFile,
+      dashboardUrl,
       mode: 'advanced-generation'
     },
     clicks: [],
@@ -103,6 +104,8 @@ async function run() {
     const discovery = new RouteDiscovery(baseUrl, { loginUrl, email, password, emailSelector, passwordSelector, submitSelector });
     const routes = discovery.loadLaravelRoutesFromJson(routesFile);
     const seeded = routes.map((r) => normalizeUrl(r.url)).filter(Boolean);
+    const routeChecklist = new Set(seeded);
+    const touchedRouteChecklist = new Set();
     const queue = Array.from(new Set(seeded));
     const visited = new Set();
     const queued = new Set(queue);
@@ -141,7 +144,7 @@ async function run() {
       };
     });
 
-    // Login once before route traversal (except login page checks)
+    // Login once before route traversal
     try {
       await page.goto(`${baseUrl}${loginUrl}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
       await page.fill(emailSelector, email);
@@ -151,24 +154,46 @@ async function run() {
         page.click(submitSelector)
       ]);
       log(`Authenticated using ${loginUrl}`);
+      try {
+        await page.goto(`${baseUrl}${dashboardUrl}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        log(`Reached dashboard at ${dashboardUrl}`);
+      } catch (error) {
+        recordProblem('dashboard', error);
+      }
     } catch (error) {
       recordProblem('login', error);
       log('Continuing without confirmed authenticated state');
     }
 
-    const collectMenuLinks = async () => {
+    const collectInternalLinks = async () => {
       const urls = await page.evaluate(() => {
-        const selectors = ['nav a[href]', 'aside a[href]', '[role="menu"] a[href]', '.fi-sidebar a[href]'];
-        const nodes = selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
-        return nodes.map((a) => a.href).filter(Boolean);
+        return Array.from(document.querySelectorAll('a[href]')).map((a) => ({
+          href: a.href,
+          text: (a.innerText || a.textContent || '').trim().slice(0, 160),
+          id: a.id || '',
+          className: typeof a.className === 'string' ? a.className : ''
+        }));
       });
-      for (const found of urls) {
-        const normalized = normalizeUrl(found);
-        if (!normalized || queued.has(normalized) || visited.has(normalized)) continue;
+
+      const unique = new Set();
+      const internalLinks = [];
+      for (const entry of urls) {
+        const normalized = normalizeUrl(entry.href);
+        if (!normalized || unique.has(normalized)) continue;
+        unique.add(normalized);
         if (!normalized.startsWith(baseUrl)) continue;
+        if (normalized.startsWith('mailto:') || normalized.startsWith('tel:')) continue;
+        internalLinks.push({ ...entry, href: normalized });
+      }
+
+      for (const found of internalLinks) {
+        const normalized = found.href;
+        if (!normalized || queued.has(normalized) || visited.has(normalized)) continue;
         queued.add(normalized);
         queue.push(normalized);
       }
+
+      return internalLinks;
     };
 
     const fillFormsAndSubmit = async (currentUrl) => {
@@ -281,31 +306,25 @@ async function run() {
         });
         step += 1;
 
-        await fillFormsAndSubmit(currentUrl);
-        await collectMenuLinks();
+        if (routeChecklist.has(currentUrl)) {
+          touchedRouteChecklist.add(currentUrl);
+        }
 
-        const clickableCandidates = page.locator('nav button, aside button, [role="menu"] button, .fi-sidebar button');
-        const clickCount = Math.min(await clickableCandidates.count(), maxAutoClicksPerPage);
-        for (let i = 0; i < clickCount; i++) {
-          const candidate = clickableCandidates.nth(i);
-          try {
-            const text = ((await candidate.textContent()) || '').trim();
-            if (/logout|delete|remove/i.test(text)) continue;
-            const selector = await selectorFor(candidate, 'button');
-            await candidate.click({ timeout: 2000 }).catch(() => {});
-            session.clicks.push({
-              step,
-              timestamp: new Date().toISOString(),
-              selector,
-              text,
-              tagName: 'BUTTON',
-              url: currentUrl,
-              pathname: routePath
-            });
-            step += 1;
-          } catch (error) {
-            recordProblem(`auto-click:${currentUrl}`, error);
-          }
+        await fillFormsAndSubmit(currentUrl);
+
+        const discoveredLinks = await collectInternalLinks();
+        for (const link of discoveredLinks) {
+          session.clicks.push({
+            step,
+            timestamp: new Date().toISOString(),
+            selector: link.id ? `#${link.id}` : (link.className ? `a.${link.className.split(/\s+/).filter(Boolean).join('.')}` : `a[href="${link.href}"]`),
+            text: link.text,
+            tagName: 'A',
+            href: link.href,
+            url: currentUrl,
+            pathname: routePath
+          });
+          step += 1;
         }
 
       } catch (error) {
@@ -322,6 +341,9 @@ async function run() {
     session.metadata.duration = Date.now() - new Date(session.metadata.startTime).getTime();
     session.metadata.visitedRoutes = session.routes.length;
     session.metadata.discoveredProblems = session.problems.length;
+    session.metadata.routeInventoryTotal = routeChecklist.size;
+    session.metadata.routeInventoryTouched = touchedRouteChecklist.size;
+    session.metadata.routeInventoryUntouched = routeChecklist.size - touchedRouteChecklist.size;
 
     const recordingFile = path.join(recordingsDir, `e2e-session-${timestamp}.json`);
     fs.writeFileSync(recordingFile, JSON.stringify(session, null, 2));
@@ -330,6 +352,19 @@ async function run() {
     const outputFile = path.join(testsDir, `advanced-generated-${timestamp}.spec.js`);
     convertToPlaywright(recordingFile, outputFile);
     log(`Generated Playwright test at ${outputFile}`);
+
+    const untouchedRoutes = Array.from(routeChecklist).filter((route) => !touchedRouteChecklist.has(route));
+    const todoFile = path.resolve('todo.txt');
+    const todoContent = [
+      '# Untouched routes from routes.json',
+      '',
+      ...(untouchedRoutes.length
+        ? untouchedRoutes.map((route) => `- [ ] ${route}`)
+        : ['All routes from routes.json were touched.'])
+    ].join('\n');
+    fs.writeFileSync(todoFile, todoContent);
+    log(`Wrote untouched-route checklist to ${todoFile}`);
+
     log(`Finished with ${session.problems.length} problem(s). See ${logFile}`);
   } catch (error) {
     recordProblem('fatal', error);

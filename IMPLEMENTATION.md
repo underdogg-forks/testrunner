@@ -1,72 +1,45 @@
-# Implementation Summary
+# Implementation summary
 
-## Known-Routes-First Test Recording and Generation
+## Main route-inventory workflows
 
-### Primary Workflow
-
-This implementation supports routes already being known and uses route inventory as the input to test generation.
-
-For Laravel applications, route inventory is obtained directly from Artisan:
+### 1) Direct Playwright generation from Laravel routes
 
 ```bash
 php artisan route:list --json > routes.json
-```
-
-The route inventory can be passed directly into the discover/generator flow:
-
-```bash
-BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run discover
-```
-
-This generates Playwright tests from the Laravel route inventory without relying on crawler inference.
-
-For Playwright-only generation from route inventory:
-
-```bash
 BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run generate:playwright:routes
 ```
 
-For login-aware automated traversal + recording + Playwright generation:
+This generates module-based Playwright specs from known routes.
+
+### 2) Advanced login-aware traversal and generation
 
 ```bash
-BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run advanced-generation
+BASE_URL=http://localhost:8000 ROUTES_FILE=routes.json npm run advanced.js
 ```
 
-This run:
-- Authenticates (default `/login`) for protected routes
-- Visits known routes and menu-derived routes
-- Fills forms with dummy data and attempts submission
-- Logs issues to `storage/logs/e2e-recording.log`
-- Generates `recordings/e2e-session-*.json` and `tests-playwright/advanced-generated-*.spec.js`
+This workflow:
 
-### Why this is the default
+- logs in (default `/login`),
+- moves to dashboard (default `/dashboard`),
+- follows discovered internal links,
+- fills forms with dummy values and attempts submission,
+- records route/link/form/network activity,
+- generates Playwright output from the resulting recording,
+- writes error details to `storage/logs/e2e-recording.log`,
+- writes untouched route checklist to `todo.txt`.
 
-1. **Reliable source of truth**: route list comes from the framework, not guesswork.
-2. **Better coverage planning**: tests can be mapped to known endpoints before recording.
-3. **Less noise**: avoids crawler-only paths and internal navigation artifacts.
+## Current scripts
 
-### Fallback Workflow for Exotic / Non-Laravel Apps
+1. `npm run record` (manual recording)
+2. `npm run convert:playwright <recording.json>`
+3. `npm run convert:phpunit <recording.json>`
+4. `npm run playback <recording.json>`
+5. `npm run discover` (crawler fallback or inventory-backed discovery)
+6. `npm run generate:playwright:routes` (inventory-only generation)
+7. `npm run advanced.js` (advanced traversal + generation)
+8. `npm run advanced-generation` (same as above)
+9. `npm run adavanced-generation` (compatibility alias)
 
-When a route list is not available (exotic or non-Laravel applications), crawler-based route discovery remains supported:
+## Fallback mode
 
-- `npm run discover`
-
-This fallback crawls the application to infer reachable routes and generate starter tests.
-
-### Current Tooling
-
-1. **Recording**: `npm run record` (manual interaction recording in an opened browser)
-2. **Conversion**:
-   - `npm run convert:playwright <recording.json>`
-   - `npm run convert:phpunit <recording.json>`
-3. **Playback**: `npm run playback <recording.json>`
-4. **Route inventory generation**: `npm run generate:playwright:routes`
-5. **Advanced auto-generation**: `npm run advanced-generation` (alias: `npm run adavanced-generation`)
-6. **Fallback discovery**: `npm run discover`
-
-### Documentation Direction
-
-Documentation now reflects:
-
-- Known-routes-first operation as the standard workflow (Laravel via `php artisan route:list`).
-- Discovery as an explicit fallback path for applications that cannot provide a route list upfront.
+If route inventory is not available, `npm run discover` remains available for crawler-based route inference.
