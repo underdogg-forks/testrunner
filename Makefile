@@ -35,10 +35,13 @@ record: ## Manual browser interaction recording
 	npm run record
 
 convert-playwright: ## Convert a manual recording to Playwright (set RECORDING=recordings/session-<timestamp>.json)
+	@test -n "$(RECORDING)" || (echo "Usage: make convert-playwright RECORDING=recordings/session-<timestamp>.json" && exit 1)
 	npm run convert:playwright $(RECORDING)
 
 convert-phpunit: ## Convert a manual recording to PHPUnit (set RECORDING=recordings/session-<timestamp>.json)
+	@test -n "$(RECORDING)" || (echo "Usage: make convert-phpunit RECORDING=recordings/session-<timestamp>.json" && exit 1)
 	npm run convert:phpunit $(RECORDING)
 
 playback: ## Replay a manual recording (set RECORDING=recordings/session-<timestamp>.json)
+	@test -n "$(RECORDING)" || (echo "Usage: make playback RECORDING=recordings/session-<timestamp>.json" && exit 1)
 	npm run playback $(RECORDING)
