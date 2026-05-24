@@ -8,7 +8,7 @@
     "routes:generate": "node generate-playwright-from-routes.js",
 
     "auto": "node advanced-generation.js",
-    "auto:single": "node advanced-generation.js --singleRoute",
+    "auto:single": "node advanced-generation.js",
 
     "discover": "node discover-routes.js",
 
