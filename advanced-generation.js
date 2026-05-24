@@ -27,36 +27,46 @@ function createTestRunnerLogger() {
 
   return {
     file,
-    info: (m, e) => write('INFO', m, e),
-    warn: (m, e) => write('WARN', m, e),
-    error: (m, e) => write('ERROR', m, e),
-    debug: (m, e) => write('DEBUG', m, e)
+    info: (msg, extra) => write('INFO', msg, extra),
+    warn: (msg, extra) => write('WARN', msg, extra),
+    error: (msg, extra) => write('ERROR', msg, extra),
+    debug: (msg, extra) => write('DEBUG', msg, extra)
   };
 }
 
 function normalizeUrl(url) {
   if (!url) return '';
-  const clean = url.split('#')[0].split('?')[0];
-  return clean.endsWith('/') && clean.length > 1 ? clean.slice(0, -1) : clean;
+  const noHash = url.split('#')[0];
+  const noQuery = noHash.split('?')[0];
+
+  return noQuery.endsWith('/') && noQuery.length > 1
+      ? noQuery.slice(0, -1)
+      : noQuery;
 }
 
 function urlIncludes(url, expected) {
-  return url && expected ? String(url).includes(expected) : false;
+  if (!url || !expected) return false;
+  return String(url).includes(expected);
 }
 
-function toBoolean(value, fallback = false) {
-  if (value === undefined || value === null || value === '') return fallback;
+function toBoolean(value, defaultValue = false) {
+  if (value === undefined || value === null || value === '') return defaultValue;
   return String(value).toLowerCase() === 'true';
 }
 
-function resolveRouteUrl(baseUrl, route) {
-  if (!route) return '';
-  if (/^https?:\/\//i.test(route)) return normalizeUrl(route);
-  return normalizeUrl(`${baseUrl}${route.startsWith('/') ? route : '/' + route}`);
+function resolveRouteUrl(baseUrl, routeValue) {
+  if (!routeValue) return '';
+  if (/^https?:\/\//i.test(routeValue)) return normalizeUrl(routeValue);
+
+  const normalizedPath = routeValue.startsWith('/')
+      ? routeValue
+      : `/${routeValue}`;
+
+  return normalizeUrl(`${baseUrl}${normalizedPath}`);
 }
 
 function shouldSkipRoute(url) {
-  const blocked = [
+  const blockedPatterns = [
     '/logout',
     '/login',
     '/register',
@@ -66,36 +76,39 @@ function shouldSkipRoute(url) {
     '/horizon',
     '/telescope'
   ];
-  return blocked.some((p) => url.includes(p));
+
+  return blockedPatterns.some((pattern) => url.includes(pattern));
 }
 
 function isParameterizedRoute(url) {
   return url.includes('{') || url.includes('}');
 }
 
-function loadDotEnv(file) {
-  if (!fs.existsSync(file)) return;
-  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+function loadDotEnv(dotEnvPath) {
+  if (!fs.existsSync(dotEnvPath)) return;
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
+  const content = fs.readFileSync(dotEnvPath, 'utf8');
 
-    const i = trimmed.indexOf('=');
-    if (i === -1) continue;
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
 
-    const key = trimmed.slice(0, i);
-    let value = trimmed.slice(i + 1);
+    const index = line.indexOf('=');
+    if (index === -1) continue;
 
-    if (!process.env[key]) {
-      if (
-          (value.startsWith('"') && value.endsWith('"')) ||
-          (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1);
-      }
-      process.env[key] = value;
+    const key = line.slice(0, index).trim();
+    let value = line.slice(index + 1).trim();
+
+    if (!key || process.env[key] !== undefined) continue;
+
+    if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
     }
+
+    process.env[key] = value;
   }
 }
 
@@ -103,15 +116,20 @@ function parseArgs() {
   const args = process.argv.slice(2);
 
   const getArg = (name) => {
-    const p = `--${name}=`;
-    const i = args.findIndex((a) => a === `--${name}` || a.startsWith(p));
+    const prefix = `--${name}=`;
+    const exact = `--${name}`;
 
-    if (i === -1) return '';
+    const index = args.findIndex((a) => a === exact || a.startsWith(prefix));
+    if (index === -1) return '';
 
-    if (args[i].startsWith(p)) return args[i].slice(p.length);
+    const value = args[index];
 
-    if (args[i + 1] && !args[i + 1].startsWith('--')) {
-      return args[i + 1];
+    if (value.startsWith(prefix)) {
+      return value.slice(prefix.length).trim();
+    }
+
+    if (args[index + 1] && !args[index + 1].startsWith('--')) {
+      return args[index + 1].trim();
     }
 
     return '';
@@ -126,40 +144,108 @@ async function run() {
   loadDotEnv(path.resolve('.env'));
 
   const logger = createTestRunnerLogger();
+
   const { getArg, hasFlag } = parseArgs();
 
   const baseUrl = (
       getArg('baseUrl') ||
       process.env.APP_URL ||
+      process.env.BASE_URL ||
       'http://localhost:3000'
   ).replace(/\/$/, '');
 
-  const routesFile = getArg('routes') || process.env.ROUTES_JSON || '';
+  const routesFile =
+      getArg('routes') ||
+      process.env.ROUTES_JSON ||
+      process.env.ROUTES_FILE ||
+      '';
 
-  if (!routesFile) {
-    console.error('❌ Missing ROUTES_JSON / --routes');
-    process.exit(1);
+  const loginUrl =
+      getArg('loginUrl') ||
+      process.env.LOGIN_PATH ||
+      '/login';
+
+  const dashboardUrl =
+      getArg('dashboardUrl') ||
+      process.env.DASHBOARD_PATH ||
+      '/dashboard';
+
+  const email =
+      getArg('email') ||
+      process.env.E2E_EMAIL ||
+      'a@a.com';
+
+  const password =
+      getArg('password') ||
+      process.env.E2E_PASSWORD ||
+      'demopassword';
+
+  const emailSelector =
+      getArg('emailSelector') ||
+      'input[name="email"], input[id="email"]';
+
+  const passwordSelector =
+      getArg('passwordSelector') ||
+      'input[name="password"], input[id="password"]';
+
+  const submitSelector =
+      getArg('submitSelector') ||
+      'button[type="submit"], input[type="submit"]';
+
+  let headless = (process.env.HEADLESS || 'true') !== 'false';
+
+  if (toBoolean(getArg('headless'), headless)) {
+    headless = true;
   }
 
-  const loginUrl = getArg('loginUrl') || process.env.LOGIN_PATH || '/login';
-  const dashboardUrl = getArg('dashboardUrl') || process.env.DASHBOARD_PATH || '/dashboard';
+  if (hasFlag('headed') || toBoolean(process.env.HEADED, false)) {
+    headless = false;
+  }
 
-  const email = getArg('email') || process.env.E2E_EMAIL || 'a@a.com';
-  const password = getArg('password') || process.env.E2E_PASSWORD || 'demo';
-
-  const emailSelector = 'input[name="email"], input[id="email"]';
-  const passwordSelector = 'input[name="password"], input[id="password"]';
-  const submitSelector = 'button[type="submit"], input[type="submit"]';
-
-  let headless = !(hasFlag('headed') || process.env.HEADED === 'true');
+  const maxLinksPerPage = Number(process.env.MAX_LINKS_PER_PAGE || 250);
 
   const singleRouteInput =
       getArg('singleRoute') ||
       getArg('route') ||
       process.env.ROUTE ||
+      process.env.SINGLE_ROUTE ||
       '';
 
   const singleRoute = resolveRouteUrl(baseUrl, singleRouteInput);
+
+  const assumeAuthenticated = toBoolean(
+      getArg('assumeAuthenticated') ||
+      process.env.ASSUME_AUTHENTICATED,
+      false
+  );
+
+  const requireAuthConfirmation = toBoolean(
+      getArg('requireAuthConfirmation') ||
+      process.env.REQUIRE_AUTH_CONFIRMATION,
+      true
+  );
+
+  if (!routesFile.trim()) {
+    console.error('❌ Missing ROUTES_JSON / --routes');
+    process.exit(1);
+  }
+
+  const logDir = path.resolve('storage/logs');
+  const recordingsDir = path.resolve('recordings');
+  const testsDir = path.resolve('tests-playwright');
+
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.mkdirSync(recordingsDir, { recursive: true });
+  fs.mkdirSync(testsDir, { recursive: true });
+
+  const logFile = path.join(logDir, 'e2e-recording.log');
+  fs.writeFileSync(logFile, '');
+
+  const log = (message, level = 'INFO') => {
+    const line = `[${new Date().toISOString()}] [${level}] ${message}\n`;
+    fs.appendFileSync(logFile, line);
+    console.log(`[${level}] ${message}`);
+  };
 
   const discovery = new RouteDiscovery(baseUrl, {
     loginUrl,
@@ -171,58 +257,57 @@ async function run() {
   });
 
   const routes = discovery.loadLaravelRoutesFromJson(routesFile);
+
   const seeded = routes.map((r) => normalizeUrl(r.url)).filter(Boolean);
 
-  const queue = singleRoute ? [singleRoute] : [...new Set(seeded)];
-  const visited = new Set();
+  const routeInventory = new Set(seeded);
+  const matchedRoutes = new Set();
+  const discoveredRoutes = new Set();
 
-  const scanReport = {
-    startTime: new Date().toISOString(),
-    baseUrl,
-    visited: [],
-    skipped: [],
-    failed: [],
-    errors: []
-  };
+  const initialRoutes = singleRoute
+      ? [singleRoute]
+      : Array.from(routeInventory);
+
+  const queue = [...initialRoutes];
+  const visited = new Set();
 
   let browser;
 
   try {
     browser = await chromium.launch({ headless });
+
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    const bootstrapUrl = singleRoute || resolveRouteUrl(baseUrl, dashboardUrl);
+    const bootstrapUrl =
+        singleRoute || resolveRouteUrl(baseUrl, dashboardUrl);
 
     await page.goto(bootstrapUrl, { waitUntil: 'domcontentloaded' });
 
     if (urlIncludes(page.url(), loginUrl)) {
-      logger.warn('Login required');
+      log('Redirected to login, authenticating');
 
       await page.fill(emailSelector, email);
       await page.fill(passwordSelector, password);
 
       await Promise.all([
-        page.waitForURL((u) => !u.toString().includes(loginUrl)),
+        page.waitForURL((url) => !url.toString().includes(loginUrl)),
         page.click(submitSelector)
       ]);
 
-      logger.info('Authenticated');
+      log('Authentication complete');
     }
+
+    await page.goto(bootstrapUrl, { waitUntil: 'domcontentloaded' });
 
     while (queue.length > 0) {
       const url = queue.shift();
       if (!url || visited.has(url)) continue;
 
       visited.add(url);
-      scanReport.visited.push(url);
-
-      process.stdout.write(
-          `\rVisited: ${scanReport.visited.length} | Queue: ${queue.length} | Errors: ${scanReport.errors.length}`
-      );
+      discoveredRoutes.add(url);
 
       if (shouldSkipRoute(url) || isParameterizedRoute(url)) {
-        scanReport.skipped.push(url);
         logger.warn('Skipped route', { url });
         continue;
       }
@@ -235,41 +320,102 @@ async function run() {
         );
 
         for (const link of links) {
-          const n = normalizeUrl(link);
+          const normalized = normalizeUrl(link);
 
-          if (!n.startsWith(baseUrl)) continue;
-          if (shouldSkipRoute(n) || isParameterizedRoute(n)) continue;
-          if (!visited.has(n)) queue.push(n);
+          if (!normalized.startsWith(baseUrl)) continue;
+          if (shouldSkipRoute(normalized)) continue;
+          if (isParameterizedRoute(normalized)) continue;
+
+          if (routeInventory.has(normalized)) {
+            matchedRoutes.add(normalized);
+          }
+
+          if (!visited.has(normalized)) {
+            queue.push(normalized);
+          }
         }
       } catch (error) {
-        scanReport.failed.push({ url, message: error.message });
-
         logger.error('Route failure', {
           url,
-          message: error.message,
-          stack: error.stack
+          message: error?.message,
+          stack: error?.stack
         });
       }
     }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const total = routeInventory.size;
+    const matched = matchedRoutes.size;
 
-    const output = path.join('recordings', `session-${timestamp}.json`);
-    fs.writeFileSync(output, JSON.stringify(scanReport, null, 2));
+    const coveragePercent =
+        total === 0 ? 0 : Math.round((matched / total) * 10000) / 100;
 
-    const specOut = path.join('tests-playwright', `generated-${timestamp}.spec.js`);
-    convertToPlaywright(output, specOut);
+    const untouchedRoutes = [...routeInventory].filter(
+        (r) => !matchedRoutes.has(r)
+    );
 
-    logger.info(`Generated: ${specOut}`);
+    const extraRoutes = [...discoveredRoutes].filter(
+        (r) => !routeInventory.has(r)
+    );
 
-    console.log('\n\n=== SCAN SUMMARY ===');
-    console.log(`Visited: ${scanReport.visited.length}`);
-    console.log(`Skipped: ${scanReport.skipped.length}`);
-    console.log(`Failed: ${scanReport.failed.length}`);
-    console.log(`Errors: ${scanReport.errors.length}`);
-    console.log(`Log: ${logger.file}`);
+    const timestamp = new Date().toISOString().replace(/:/g, '-');
+
+    const recordingFile = path.join(
+        recordingsDir,
+        `session-${timestamp}.json`
+    );
+
+    fs.writeFileSync(
+        recordingFile,
+        JSON.stringify(
+            {
+              visited: Array.from(visited),
+              matched: Array.from(matchedRoutes),
+              discovered: Array.from(discoveredRoutes)
+            },
+            null,
+            2
+        )
+    );
+
+    const specOut = path.join(
+        testsDir,
+        `generated-${timestamp}.spec.js`
+    );
+
+    convertToPlaywright(recordingFile, specOut);
+
+    const coverageFile = path.join(
+        logDir,
+        `coverage-${timestamp}.json`
+    );
+
+    fs.writeFileSync(
+        coverageFile,
+        JSON.stringify(
+            {
+              coveragePercent,
+              totalRoutes: total,
+              matchedRoutes: matched,
+              untouchedRoutes,
+              extraRoutes
+            },
+            null,
+            2
+        )
+    );
+
+    log(`Generated: ${specOut}`);
+    log(`Coverage: ${coveragePercent}% (${matched}/${total})`);
+
+    console.log(
+        `\n📊 Route Coverage: ${coveragePercent}% (${matched}/${total})\n`
+    );
   } catch (error) {
-    logger.error('Fatal error', { message: error.message, stack: error.stack });
+    logger.error('Fatal error', {
+      message: error?.message,
+      stack: error?.stack
+    });
+
     process.exitCode = 1;
   } finally {
     if (browser) await browser.close();
