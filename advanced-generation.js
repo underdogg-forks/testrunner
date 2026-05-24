@@ -42,7 +42,6 @@ function normalizeUrl(url) {
 function shouldSkip(url) {
   const blocked = [
     '/logout',
-    '/login',
     '/register',
     '/password',
     '/broadcasting/auth',
