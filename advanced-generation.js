@@ -38,11 +38,13 @@ function parseArgs() {
   const args = process.argv.slice(2);
 
   const get = (name) => {
-    const p = `--${name}=`;
-    const i = args.findIndex((a) => a === `--${name}` || a.startsWith(p));
+    const prefix = `--${name}=`;
+    const i = args.findIndex(a => a === `--${name}` || a.startsWith(prefix));
+
     if (i === -1) return '';
-    if (args[i].startsWith(p)) return args[i].slice(p.length);
+    if (args[i].startsWith(prefix)) return args[i].slice(prefix.length);
     if (args[i + 1] && !args[i + 1].startsWith('--')) return args[i + 1];
+
     return '';
   };
 
@@ -64,8 +66,16 @@ function normalizeUrl(url) {
 }
 
 function shouldSkip(url) {
-  const blocked = ['/logout', '/register', '/password', '/storage/', '/horizon', '/telescope'];
-  return blocked.some((p) => url.includes(p));
+  const blocked = [
+    '/logout',
+    '/register',
+    '/password',
+    '/storage/',
+    '/horizon',
+    '/telescope'
+  ];
+
+  return blocked.some(p => url.includes(p));
 }
 
 function isParamRoute(url) {
@@ -78,6 +88,13 @@ function resolve(base, route) {
   return normalizeUrl(`${base}${route.startsWith('/') ? route : `/${route}`}`);
 }
 
+function loadScan(file) {
+  if (!fs.existsSync(file)) {
+    throw new Error(`Scan file not found: ${file}`);
+  }
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
 async function run() {
   const logger = createLogger();
   const { get } = parseArgs();
@@ -85,10 +102,9 @@ async function run() {
   const baseUrl = (get('baseUrl') || process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
   const routesFile = get('routes') || process.env.ROUTES_JSON;
 
-  if (!routesFile) {
-    console.error('Missing ROUTES_JSON / --routes');
-    process.exit(1);
-  }
+  const replayFile = get('replay');
+  const replayOnlyFailed = String(get('replayOnlyFailed') || '').toLowerCase() === 'true';
+  const replayRoute = get('replayRoute');
 
   const loginUrl = get('loginUrl') || process.env.LOGIN_PATH || '/login';
   const dashboardUrl = get('dashboardUrl') || process.env.DASHBOARD_PATH || '/dashboard';
@@ -100,25 +116,46 @@ async function run() {
 
   logger.info(`browser mode: ${headless ? 'headless' : 'headed'}`);
 
-  const discovery = new RouteDiscovery(baseUrl, {
-    loginUrl,
-    email,
-    password
-  });
+  let routes = [];
+  let phase = null;
 
-  const routesRaw = discovery.loadLaravelRoutesFromJson(routesFile);
+  if (replayFile) {
+    logger.info(`replay mode: ${replayFile}`);
 
-  const routes = sortRoutes(
-      routesRaw.map((r) => normalizeUrl(r.url))
-  );
+    const replay = loadScan(replayFile);
+    phase = replay;
 
-  const phase = {
-    scanned: [],
-    visited: [],
-    skipped: [],
-    failed: [],
-    startTime: new Date().toISOString()
-  };
+    routes = replayOnlyFailed
+        ? (replay.failed || []).map(f => f.url)
+        : replay.scanned || [];
+
+    if (replayRoute) {
+      routes = routes.filter(r => r.includes(replayRoute));
+    }
+
+    routes = sortRoutes(routes);
+
+  } else {
+    const discovery = new RouteDiscovery(baseUrl, {
+      loginUrl,
+      email,
+      password
+    });
+
+    const routesRaw = discovery.loadLaravelRoutesFromJson(routesFile);
+
+    routes = sortRoutes(
+        routesRaw.map(r => normalizeUrl(r.url))
+    );
+
+    phase = {
+      scanned: [],
+      visited: [],
+      skipped: [],
+      failed: [],
+      startTime: new Date().toISOString()
+    };
+  }
 
   let browser;
 
@@ -139,7 +176,7 @@ async function run() {
       await page.fill('input[name="password"]', password);
 
       await Promise.all([
-        page.waitForURL((u) => !u.toString().includes(loginUrl)),
+        page.waitForURL(u => !u.toString().includes(loginUrl)),
         page.click('button[type="submit"]')
       ]);
 
@@ -183,7 +220,9 @@ async function run() {
           if (!n.startsWith(baseUrl)) continue;
           if (shouldSkip(n) || isParamRoute(n)) continue;
 
-          if (!visited.has(n)) queue.push(n);
+          if (!replayFile && !visited.has(n)) {
+            queue.push(n);
+          }
         }
 
       } catch (e) {
@@ -205,7 +244,6 @@ async function run() {
 
     logger.info(`coverage: ${coverage}%`);
 
-    // IMPORTANT: conversion isolation
     try {
       const specOut = path.join('tests-playwright', `generated-${Date.now()}.spec.js`);
       convertToPlaywright(scanFile, specOut);
