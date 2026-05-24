@@ -1,148 +1,103 @@
-````md
-# Playwright Laravel E2E Generator
+# Playwright Route Testrunner
 
-This tool generates Playwright test suites from:
+This repository scans a target PHP/Laravel app (configured via `.env`), generates Playwright tests, and always writes a final run report.
 
-- Laravel route inventory (deterministic)
-- Authenticated browser traversal (dynamic)
-
----
-
-## Quick Start
+## Quick start
 
 ```bash
 make install
-php artisan route:list --json > routes.json
-make auto
-````
-
----
-
-## What it does
-
-* logs into your application
-* starts from dashboard or selected route
-* crawls internal links safely
-* fills forms with synthetic data
-* records navigation and network activity
-* generates Playwright test suites
-* reports untouched routes
-
----
-
-## Main commands
-
-### Full automated run
-
-```bash
 make auto
 ```
 
-### Single route run
-
-```bash
-make auto-one ROUTE=/dashboard
-```
-
-### Run tests
-
-```bash
-make test
-```
-
-### Run one test
-
-```bash
-make test-one ROUTE=/dashboard
-```
-
----
-
-## Route-based generation (deterministic)
-
-```bash
-php artisan route:list --json > routes.json
-make generate-routes
-```
-
----
-
-## Manual recording
-
-```bash
-make record
-```
-
-Convert recording:
-
-```bash
-make convert-playwright RECORDING=recordings/session.json
-```
-
-Replay recording:
-
-```bash
-make playback RECORDING=recordings/session.json
-```
-
----
-
-## Outputs
-
-* `recordings/` → raw browser sessions
-* `tests-playwright/` → generated test suites
-* `storage/logs/` → logs and unmatched links
-* `todo.txt` → uncovered routes + retry items
-
----
-
-## Configuration (.env)
+## Configuration (`.env`)
 
 ```env
-APP_URL=http://localhost:8000
+APP_URL=http://example.test
+LARAVEL_PATH=/example/path/to/laravel
 ROUTES_JSON=routes.json
 LOGIN_PATH=/login
-DASHBOARD_PATH=/dashboard
-E2E_EMAIL=admin@example.com
-E2E_PASSWORD=secret
+DASHBOARD_PATH=http://example.test/dashboard
+E2E_EMAIL=example@example.com
+E2E_PASSWORD=example123
+HEADLESS=false
+ASSUME_AUTHENTICATED=false
 ```
 
-Optional:
+Optional control flags:
 
 ```env
-HEADLESS=true
-HEADED=true
-ASSUME_AUTHENTICATED=false
-REQUIRE_AUTH_CONFIRMATION=true
-MAX_LINKS_PER_PAGE=250
+STOP_ON_ERROR=false
+STOP_ON_FAIL_ROUTE=false
+STOP_ON_FAILURE=false
+SCREENSHOT_ON_ERROR=true
+TRACE=true
 ```
 
----
+- `TRACE` defaults to `true` in CI when not set.
+- `STOP_ON_FAILURE` is an alias of `STOP_ON_FAIL_ROUTE`.
 
-## Recommended workflow
+## Main commands
 
 ```bash
 make install
 make routes
 make auto
+make auto-one ROUTE=/dashboard
+make scan-todo
+make test
 ```
 
----
+## Modes
 
-## Debug workflow
+### 1) Full scan
 
 ```bash
-make auto-one ROUTE=/dashboard HEADED=true
+make auto
 ```
 
----
+Scans route inventory when available, discovers links, generates Playwright output, and writes unified reporting.
 
-## Notes
+### 2) Single-route scan (with discovery expansion)
 
-* Parameterized Laravel routes (`{id}`) are ignored
-* Authentication routes are excluded from traversal
-* Only internal application links are followed
-* Designed for stable Playwright test generation from real usage flows
-
+```bash
+make auto-one ROUTE=/dashboard
 ```
+
+Starts from one route but still scans discovered internal routes.
+
+### 3) Todo completion mode
+
+```bash
+make scan-todo
 ```
+
+Uses `todo.json` (`nonScannedRoutes` + `erroredRoutes`) to continue unfinished coverage.
+
+## CLI flags (supported by scanner)
+
+- `--stop-on-error`
+- `--stop-on-fail-route`
+- `--stop-on-failure` (alias)
+- `--screenshot-on-error` (default `true`)
+- `--trace` (default `true` in CI)
+
+## Outputs per run
+
+- `storage/logs/run-report.json` (latest)
+- `storage/logs/run-report-<timestamp>.json` (historical)
+- `todo.json` (next-pass input for `make scan-todo`)
+- `todo.txt` (human-readable backlog)
+- `recordings/scan-<timestamp>.json`
+- `tests-playwright/generated-<timestamp>.spec.js`
+- `storage/logs/screenshots/*` and/or `storage/logs/traces/*` for failures
+
+## Report classification
+
+Every run report includes:
+
+- `scannedRoutes`
+- `erroredRoutes`
+- `skippedRoutes`
+- `nonScannedRoutes`
+
+The report is always produced, including non-Laravel/dynamic-only scans.

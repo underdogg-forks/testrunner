@@ -5,228 +5,691 @@ const { RouteDiscovery } = require('./discover-routes');
 const { convertToPlaywright } = require('./convert-to-playwright');
 const { sortRoutes } = require('./utils');
 
-function log(level, message, extra = null) {
-  const line = `[${new Date().toISOString()}] [${level}] ${message}`;
-  console.log(line);
-  return line;
+const LOG_DIR = 'storage/logs';
+const RECORDINGS_DIR = 'recordings';
+const TESTS_DIR = 'tests-playwright';
+
+function ensureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
 }
 
 function parseArgs() {
-  const args = process.argv.slice(2);
+  const raw = process.argv.slice(2);
+  const parsed = {};
 
-  const get = (name) => {
-    const prefix = `--${name}=`;
-    const found = args.find(a => a.startsWith(prefix));
-    return found ? found.slice(prefix.length) : '';
-  };
+  for (let i = 0; i < raw.length; i++) {
+    const arg = raw[i];
+    if (!arg.startsWith('--')) continue;
 
-  const has = (f) => args.includes(`--${f}`);
+    const keyValue = arg.slice(2);
+    const eqIndex = keyValue.indexOf('=');
 
+    if (eqIndex >= 0) {
+      const key = keyValue.slice(0, eqIndex);
+      const value = keyValue.slice(eqIndex + 1);
+      parsed[key] = value;
+      continue;
+    }
+
+    const next = raw[i + 1];
+    if (next && !next.startsWith('--')) {
+      parsed[keyValue] = next;
+      i += 1;
+    } else {
+      parsed[keyValue] = 'true';
+    }
+  }
+
+  const get = (name) => parsed[name];
+  const has = (name) => Object.prototype.hasOwnProperty.call(parsed, name);
   return { get, has };
 }
 
-function resolveHeadless(get) {
-  const raw = get('headless') || process.env.HEADLESS;
-  if (raw === undefined || raw === '') return true;
-  return String(raw).toLowerCase() !== 'false';
+function boolFrom(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
+function readFlag(get, has, key, envKey, fallback) {
+  if (has(key) && get(key) === 'true') return true;
+  if (has(key) && get(key) === 'false') return false;
+  if (has(key)) return boolFrom(get(key), fallback);
+  return boolFrom(process.env[envKey], fallback);
 }
 
 function normalizeUrl(url) {
   if (!url) return '';
-  const clean = url.split('#')[0].split('?')[0];
+  const clean = String(url).split('#')[0].split('?')[0];
   return clean.endsWith('/') && clean.length > 1 ? clean.slice(0, -1) : clean;
 }
 
-function shouldSkip(url) {
-  return ['/logout', '/register', '/password', '/storage/', '/horizon', '/telescope']
-      .some(p => url.includes(p));
+function toAbsoluteUrl(baseUrl, value) {
+  if (!value) return '';
+  try {
+    return normalizeUrl(new URL(value, `${baseUrl}/`).toString());
+  } catch {
+    return '';
+  }
 }
 
-function isParamRoute(url) {
-  return url.includes('{') || url.includes('}');
+function shouldSkipRoute(url) {
+  const skipPatterns = [
+    '/logout', '/register', '/password', '/storage/', '/horizon', '/telescope',
+    '/livewire', '/_debugbar', '/_ignition', '/sanctum/csrf-cookie'
+  ];
+  return skipPatterns.some(pattern => url.includes(pattern));
 }
 
-/**
- * PHASE 1 — SCAN (deterministic order, verbose CLI)
- */
-async function scan({ browser, baseUrl, routes, loginUrl, dashboardUrl, email, password }) {
-  const page = await browser.newPage();
+function isParameterizedRoute(url) {
+  return url.includes('{') || url.includes('}') || /\/:[^/]+/.test(url);
+}
 
-  const bootstrap = `${baseUrl}${dashboardUrl}`;
-  log('INFO', `boot -> ${bootstrap}`);
+function sanitizeFilename(input) {
+  return input.replace(/[^a-z0-9_-]/gi, '_').replace(/_+/g, '_').slice(0, 140);
+}
 
-  await page.goto(bootstrap, { waitUntil: 'domcontentloaded' });
+function createLogger(logFile) {
+  ensureDir(path.dirname(logFile));
+  fs.writeFileSync(logFile, '');
 
-  if (page.url().includes(loginUrl)) {
-    log('INFO', 'auth required');
+  return (level, message, extra = null) => {
+    const line = `[${new Date().toISOString()}] [${level}] ${message}`;
+    const withExtra = extra ? `${line} ${JSON.stringify(extra)}` : line;
+    fs.appendFileSync(logFile, `${withExtra}\n`);
+    console.log(withExtra);
+  };
+}
 
-    await page.fill('input[name="email"]', email);
-    await page.fill('input[name="password"]', password);
+function readJsonIfExists(filePath) {
+  if (!filePath) return null;
+  const absolute = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+  if (!fs.existsSync(absolute)) return null;
+  return JSON.parse(fs.readFileSync(absolute, 'utf8'));
+}
 
-    await Promise.all([
-      page.waitForURL(u => !u.toString().includes(loginUrl)),
-      page.click('button[type="submit"]')
-    ]);
+function extractTodoRoutes(todoData, baseUrl) {
+  if (!todoData) return [];
 
-    log('INFO', 'auth complete');
+  const candidates = [];
+
+  if (Array.isArray(todoData)) {
+    candidates.push(...todoData);
   }
 
-  await page.goto(bootstrap);
+  if (Array.isArray(todoData.routes)) {
+    candidates.push(...todoData.routes);
+  }
 
-  const queue = [...routes];
-  const visited = new Set();
-  const phase = {
-    scanned: [],
-    visited: [],
-    skipped: [],
-    failed: [],
-    startTime: new Date().toISOString()
+  if (Array.isArray(todoData.nonScannedRoutes)) {
+    candidates.push(...todoData.nonScannedRoutes);
+  }
+
+  if (Array.isArray(todoData.erroredRoutes)) {
+    candidates.push(...todoData.erroredRoutes.map(item => item.url || item));
+  }
+
+  const unique = new Set();
+  for (const route of candidates) {
+    const routeUrl = typeof route === 'string' ? route : route?.url;
+    const absolute = toAbsoluteUrl(baseUrl, routeUrl);
+    if (absolute) unique.add(absolute);
+  }
+
+  return sortRoutes([...unique]);
+}
+
+function createRunModel(config) {
+  return {
+    metadata: {
+      startedAt: new Date().toISOString(),
+      mode: config.mode,
+      baseUrl: config.baseUrl,
+      routesFile: config.routesFile || null,
+      todoFile: config.todoFile || null,
+      ci: !!process.env.CI,
+      flags: {
+        stopOnError: config.stopOnError,
+        stopOnFailRoute: config.stopOnFailRoute,
+        screenshotOnError: config.screenshotOnError,
+        trace: config.traceEnabled,
+      },
+    },
+    scannedRoutes: [],
+    erroredRoutes: [],
+    skippedRoutes: [],
+    nonScannedRoutes: [],
+    discoveredRoutes: [],
+    artifacts: [],
+    summary: {
+      scanned: 0,
+      errored: 0,
+      skipped: 0,
+      nonScanned: 0,
+      discovered: 0,
+      coverage: 0,
+    },
+  };
+}
+
+async function maybeLogin(page, config, log, runModel) {
+  const loginAbsolute = toAbsoluteUrl(config.baseUrl, config.loginUrl);
+  if (!loginAbsolute) return;
+
+  if (!page.url().includes(normalizeUrl(loginAbsolute))) {
+    return;
+  }
+
+  if (config.assumeAuthenticated) {
+    log('WARN', 'assume-authenticated is true but browser is currently on login page');
+    return;
+  }
+
+  if (!config.email || !config.password) {
+    const message = 'Missing E2E_EMAIL or E2E_PASSWORD for login-required route';
+    runModel.erroredRoutes.push({
+      url: page.url(),
+      reason: 'auth_missing_credentials',
+      message,
+      artifacts: [],
+      timestamp: new Date().toISOString(),
+    });
+    throw new Error(message);
+  }
+
+  log('INFO', `auth required at ${page.url()}`);
+
+  await page.fill('input[name="email"], input[type="email"], input#email', config.email);
+  await page.fill('input[name="password"], input[type="password"], input#password', config.password);
+
+  await Promise.all([
+    page.waitForURL(url => !String(url).includes(config.loginUrl), { timeout: 30000 }),
+    page.click('button[type="submit"], input[type="submit"], button:has-text("Login")'),
+  ]);
+
+  if (config.requireAuthConfirmation && page.url().includes(config.loginUrl)) {
+    throw new Error('Authentication did not exit login route');
+  }
+
+  log('INFO', 'auth complete');
+}
+
+async function captureFailureArtifacts({ page, context, routeUrl, config, traceChunkOpen, log }) {
+  const artifacts = [];
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const routeToken = sanitizeFilename(routeUrl.replace(config.baseUrl, '') || 'root');
+  const artifactBase = `${stamp}-${routeToken}`;
+
+  if (config.traceEnabled && traceChunkOpen.value) {
+    const tracePath = path.join(LOG_DIR, 'traces', `${artifactBase}.zip`);
+    ensureDir(path.dirname(tracePath));
+    try {
+      await context.tracing.stopChunk({ path: tracePath });
+      artifacts.push({ type: 'trace', path: tracePath });
+    } catch (error) {
+      log('WARN', 'failed to write trace artifact', { routeUrl, error: error.message });
+    }
+    traceChunkOpen.value = false;
+  }
+
+  const forceScreenshot = !config.traceEnabled && !config.screenshotOnError;
+  if (config.screenshotOnError || forceScreenshot) {
+    const screenshotPath = path.join(LOG_DIR, 'screenshots', `${artifactBase}.png`);
+    ensureDir(path.dirname(screenshotPath));
+    try {
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      artifacts.push({ type: 'screenshot', path: screenshotPath });
+    } catch (error) {
+      log('WARN', 'failed to write screenshot artifact', { routeUrl, error: error.message });
+    }
+  }
+
+  return artifacts;
+}
+
+function toScanSession(runModel) {
+  const started = runModel.metadata.startedAt;
+  const routeEvents = runModel.scannedRoutes.map((route, index) => ({
+    step: index + 1,
+    timestamp: route.timestamp,
+    from: index === 0 ? runModel.metadata.baseUrl : runModel.scannedRoutes[index - 1].url,
+    to: route.url,
+    path: (() => {
+      try {
+        return new URL(route.url).pathname;
+      } catch {
+        return route.url;
+      }
+    })(),
+  }));
+
+  return {
+    metadata: {
+      startTime: started,
+      endTime: new Date().toISOString(),
+      duration: Date.now() - new Date(started).getTime(),
+      startUrl: runModel.metadata.baseUrl,
+      mode: runModel.metadata.mode,
+    },
+    clicks: [],
+    routes: routeEvents,
+    formData: [],
+    networkRequests: [],
+    screenshots: runModel.artifacts.filter(a => a.type === 'screenshot').map(a => a.path),
+  };
+}
+
+function writeRunOutputs(runModel, log) {
+  ensureDir(LOG_DIR);
+  ensureDir(RECORDINGS_DIR);
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const reportFile = path.join(LOG_DIR, `run-report-${stamp}.json`);
+  const latestReportFile = path.join(LOG_DIR, 'run-report.json');
+  const todoFile = path.join(process.cwd(), 'todo.json');
+
+  const todoRoutes = sortRoutes([
+    ...runModel.nonScannedRoutes.map(r => r.url),
+    ...runModel.erroredRoutes.map(r => r.url),
+  ]);
+
+  const todoPayload = {
+    generatedAt: new Date().toISOString(),
+    report: reportFile,
+    routes: todoRoutes,
+    nonScannedRoutes: runModel.nonScannedRoutes,
+    erroredRoutes: runModel.erroredRoutes,
+    skippedRoutes: runModel.skippedRoutes,
   };
 
-  let i = 0;
+  fs.writeFileSync(reportFile, JSON.stringify(runModel, null, 2));
+  fs.writeFileSync(latestReportFile, JSON.stringify(runModel, null, 2));
+  fs.writeFileSync(todoFile, JSON.stringify(todoPayload, null, 2));
 
-  while (queue.length) {
-    const url = queue.shift();
-    if (!url || visited.has(url)) continue;
-
-    visited.add(url);
-    i++;
-
-    if (shouldSkip(url) || isParamRoute(url)) {
-      log('INFO', `[SKIP] ${url}`);
-      phase.skipped.push(url);
-      continue;
-    }
-
-    log('INFO', `[${i}] scanning ${url}`);
-
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-
-      phase.visited.push(url);
-
-      const links = await page.evaluate(() =>
-          Array.from(document.querySelectorAll('a[href]')).map(a => a.href)
-      );
-
-      for (const l of links) {
-        const n = normalizeUrl(l);
-        if (!n.startsWith(baseUrl)) continue;
-        if (shouldSkip(n) || isParamRoute(n)) continue;
-        if (!visited.has(n)) queue.push(n);
-      }
-
-    } catch (e) {
-      log('ERROR', `scan error ${url}`, e.message);
-      phase.failed.push({ url, message: e.message });
-    }
-  }
-
-  phase.scanned = sortRoutes([...visited]);
-
-  return phase;
-}
-
-/**
- * PHASE 2 — ANALYZE (pure function, no side effects)
- */
-function analyze(routes, phase) {
-  const matched = new Set(phase.scanned);
-
-  const coverage = routes.length
-      ? Math.round((matched.size / routes.length) * 100)
-      : 0;
-
-  const todo = [
-    `# Coverage: ${coverage}%`,
+  const todoText = [
+    `# Coverage: ${runModel.summary.coverage}%`,
     '',
-    '# Unvisited routes',
-    ...routes.filter(r => !matched.has(r)).map(r => `- [ ] ${r}`),
+    '# Non-scanned routes',
+    ...runModel.nonScannedRoutes.map(route => `- [ ] ${route.url} (${route.reason})`),
     '',
-    '# Failed routes',
-    ...phase.failed.map(f => `- [ ] ${f.url} (${f.message})`)
+    '# Errored routes',
+    ...runModel.erroredRoutes.map(route => `- [ ] ${route.url} (${route.message})`),
   ].join('\n');
+  fs.writeFileSync(path.join(process.cwd(), 'todo.txt'), todoText);
 
-  fs.writeFileSync('todo.txt', todo);
+  const scanSession = toScanSession(runModel);
+  const scanSessionFile = path.join(RECORDINGS_DIR, `scan-${stamp}.json`);
+  const generatedSpecFile = path.join(TESTS_DIR, `generated-${stamp}.spec.js`);
 
-  return { coverage, todo };
-}
+  fs.writeFileSync(scanSessionFile, JSON.stringify(scanSession, null, 2));
 
-/**
- * PHASE 3 — GENERATE
- */
-function generate(scanFile) {
-  const out = path.join('tests-playwright', `generated-${Date.now()}.spec.js`);
-  convertToPlaywright(scanFile, out);
-  return out;
-}
-
-/**
- * MAIN
- */
-async function run() {
-  const { get } = parseArgs();
-
-  const baseUrl = (get('baseUrl') || process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
-  const routesFile = get('routes') || process.env.ROUTES_JSON;
-
-  if (!routesFile) {
-    console.error('Missing ROUTES_JSON');
-    process.exit(1);
+  ensureDir(TESTS_DIR);
+  try {
+    convertToPlaywright(scanSessionFile, generatedSpecFile);
+    log('INFO', `generated playwright spec -> ${generatedSpecFile}`);
+  } catch (error) {
+    log('ERROR', 'playwright generation failed (scan report preserved)', { message: error.message });
   }
 
+  return { reportFile, latestReportFile, todoFile, scanSessionFile, generatedSpecFile };
+}
+
+function dedupeUrls(urls) {
+  const seen = new Set();
+  const out = [];
+  for (const url of urls) {
+    const normalized = normalizeUrl(url);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return sortRoutes(out);
+}
+
+async function run() {
+  const { get, has } = parseArgs();
+
+  const baseUrl = normalizeUrl(get('baseUrl') || process.env.APP_URL || 'http://localhost:3000');
+  const routesFile = get('routes') || process.env.ROUTES_JSON || '';
+  const routeOverride = get('route') || process.env.ROUTE || '';
+  const todoFile = get('todo') || process.env.TODO_JSON || '';
   const loginUrl = get('loginUrl') || process.env.LOGIN_PATH || '/login';
   const dashboardUrl = get('dashboardUrl') || process.env.DASHBOARD_PATH || '/dashboard';
-  const email = get('email') || process.env.E2E_EMAIL;
-  const password = get('password') || process.env.E2E_PASSWORD;
+  const email = get('email') || process.env.E2E_EMAIL || '';
+  const password = get('password') || process.env.E2E_PASSWORD || '';
 
-  const headless = resolveHeadless(get);
+  const headless = readFlag(get, has, 'headless', 'HEADLESS', true);
+  const stopOnError = readFlag(get, has, 'stop-on-error', 'STOP_ON_ERROR', false);
+  const stopOnFailRoute = has('stop-on-failure')
+    ? readFlag(get, has, 'stop-on-failure', 'STOP_ON_FAILURE', false)
+    : readFlag(get, has, 'stop-on-fail-route', 'STOP_ON_FAIL_ROUTE', false);
+  const screenshotOnError = readFlag(get, has, 'screenshot-on-error', 'SCREENSHOT_ON_ERROR', true);
+  const traceEnabled = readFlag(get, has, 'trace', 'TRACE', !!process.env.CI);
+  const assumeAuthenticated = readFlag(get, has, 'assume-authenticated', 'ASSUME_AUTHENTICATED', false);
+  const requireAuthConfirmation = readFlag(get, has, 'require-auth-confirmation', 'REQUIRE_AUTH_CONFIRMATION', true);
 
+  ensureDir(LOG_DIR);
+  const log = createLogger(path.join(LOG_DIR, 'testrunner.log'));
+
+  const mode = routeOverride
+    ? 'single-route'
+    : todoFile
+      ? 'todo-routes'
+      : routesFile
+        ? 'inventory-routes'
+        : 'seed-only';
+
+  const config = {
+    mode,
+    baseUrl,
+    routesFile,
+    routeOverride,
+    todoFile,
+    loginUrl,
+    dashboardUrl,
+    email,
+    password,
+    headless,
+    stopOnError,
+    stopOnFailRoute,
+    screenshotOnError,
+    traceEnabled,
+    assumeAuthenticated,
+    requireAuthConfirmation,
+  };
+
+  const runModel = createRunModel(config);
+  let abortRun = false;
+
+  log('INFO', `run mode: ${mode}`);
   log('INFO', `browser mode: ${headless ? 'headless' : 'headed'}`);
 
   const discovery = new RouteDiscovery(baseUrl, { loginUrl, email, password });
-  const routesRaw = discovery.loadLaravelRoutesFromJson(routesFile);
 
-  const routes = sortRoutes(
-      routesRaw.map(r => normalizeUrl(r.url))
-  );
-
-  const browser = await chromium.launch({ headless });
-
-  try {
-    // PHASE 1
-    const phase = await scan({
-      browser,
-      baseUrl,
-      routes,
-      loginUrl,
-      dashboardUrl,
-      email,
-      password
-    });
-
-    const scanFile = path.join('recordings', `scan-${Date.now()}.json`);
-    fs.writeFileSync(scanFile, JSON.stringify(phase, null, 2));
-
-    log('INFO', `scan complete -> ${scanFile}`);
-
-    // PHASE 2
-    const { coverage } = analyze(routes, phase);
-    log('INFO', `coverage: ${coverage}%`);
-
-    // PHASE 3 (isolated failure)
+  let inventoryRoutes = [];
+  if (routesFile) {
     try {
-      const out = generate(scanFile);
-      log('INFO', `generated -> ${out}`);
-    } catch (e) {
-      log('ERROR', 'generation failed (scan preserved)', e.message);
+      inventoryRoutes = discovery.loadLaravelRoutesFromJson(routesFile).map(route => normalizeUrl(route.url));
+      log('INFO', `loaded route inventory (${inventoryRoutes.length}) from ${routesFile}`);
+    } catch (error) {
+      log('WARN', `failed loading inventory (${routesFile}); continuing with dynamic scan`, { message: error.message });
+      if (stopOnError) {
+        abortRun = true;
+        runModel.erroredRoutes.push({
+          url: routesFile,
+          source: 'inventory',
+          message: error.message,
+          reason: 'inventory_error',
+          artifacts: [],
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  let todoRoutes = [];
+  if (todoFile) {
+    try {
+      const todoData = readJsonIfExists(todoFile);
+      todoRoutes = extractTodoRoutes(todoData, baseUrl);
+      log('INFO', `loaded todo routes (${todoRoutes.length}) from ${todoFile}`);
+    } catch (error) {
+      log('WARN', `failed reading todo file (${todoFile})`, { message: error.message });
+      if (stopOnError) {
+        abortRun = true;
+        runModel.erroredRoutes.push({
+          url: todoFile,
+          source: 'todo',
+          message: error.message,
+          reason: 'todo_error',
+          artifacts: [],
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  const absoluteRouteOverride = toAbsoluteUrl(baseUrl, routeOverride);
+  const dashboardSeed = toAbsoluteUrl(baseUrl, dashboardUrl) || `${baseUrl}/`;
+
+  let seedRoutes = [];
+  if (absoluteRouteOverride) {
+    seedRoutes = [absoluteRouteOverride];
+  } else if (todoRoutes.length > 0) {
+    seedRoutes = [...todoRoutes];
+  } else if (inventoryRoutes.length > 0) {
+    seedRoutes = [...inventoryRoutes];
+  } else {
+    seedRoutes = [dashboardSeed, `${baseUrl}/`];
+  }
+
+  seedRoutes = dedupeUrls(seedRoutes);
+  if (seedRoutes.length === 0) {
+    seedRoutes = [`${baseUrl}/`];
+  }
+
+  const queue = seedRoutes.map(url => ({ url, source: 'seed' }));
+  const queuedSet = new Set(seedRoutes);
+  const scannedSet = new Set();
+  const skippedSet = new Set();
+  const erroredSet = new Set();
+  const discoveredSet = new Set();
+
+  if (!abortRun) {
+    const browser = await chromium.launch({ headless });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    if (traceEnabled) {
+      await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
     }
 
-  } finally {
-    await browser.close();
+    try {
+      const bootstrap = seedRoutes[0] || dashboardSeed;
+      log('INFO', `bootstrapping -> ${bootstrap}`);
+
+      await page.goto(bootstrap, { waitUntil: 'domcontentloaded' });
+      await maybeLogin(page, config, log, runModel);
+
+      while (queue.length > 0) {
+      const { url, source } = queue.shift();
+      const routeUrl = normalizeUrl(url);
+
+      if (!routeUrl || scannedSet.has(routeUrl) || skippedSet.has(routeUrl) || erroredSet.has(routeUrl)) {
+        continue;
+      }
+
+      if (shouldSkipRoute(routeUrl)) {
+        skippedSet.add(routeUrl);
+        runModel.skippedRoutes.push({
+          url: routeUrl,
+          reason: 'excluded_pattern',
+          source,
+          timestamp: new Date().toISOString(),
+        });
+        continue;
+      }
+
+      if (isParameterizedRoute(routeUrl)) {
+        skippedSet.add(routeUrl);
+        runModel.skippedRoutes.push({
+          url: routeUrl,
+          reason: 'parameterized_route',
+          source,
+          timestamp: new Date().toISOString(),
+        });
+        continue;
+      }
+
+      const started = Date.now();
+      const traceChunkOpen = { value: false };
+
+      if (traceEnabled) {
+        await context.tracing.startChunk({ title: `scan:${routeUrl}` });
+        traceChunkOpen.value = true;
+      }
+
+      try {
+        const response = await page.goto(routeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        const status = response ? response.status() : null;
+
+        scannedSet.add(routeUrl);
+        discoveredSet.add(routeUrl);
+
+        const links = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('a[href]')).map(anchor => anchor.href)
+        );
+
+        const newlyQueued = [];
+        for (const link of links) {
+          const normalized = normalizeUrl(link);
+          if (!normalized || !normalized.startsWith(baseUrl)) {
+            continue;
+          }
+
+          discoveredSet.add(normalized);
+
+          if (shouldSkipRoute(normalized) || isParameterizedRoute(normalized)) {
+            continue;
+          }
+
+          if (!queuedSet.has(normalized) && !scannedSet.has(normalized)) {
+            queuedSet.add(normalized);
+            queue.push({ url: normalized, source: 'discovered' });
+            newlyQueued.push(normalized);
+          }
+        }
+
+        runModel.scannedRoutes.push({
+          url: routeUrl,
+          source,
+          status,
+          durationMs: Date.now() - started,
+          discoveredLinks: newlyQueued.length,
+          timestamp: new Date().toISOString(),
+        });
+
+        if (traceEnabled && traceChunkOpen.value) {
+          await context.tracing.stopChunk();
+          traceChunkOpen.value = false;
+        }
+      } catch (error) {
+        erroredSet.add(routeUrl);
+        const artifacts = await captureFailureArtifacts({
+          page,
+          context,
+          routeUrl,
+          config,
+          traceChunkOpen,
+          log,
+        });
+
+        runModel.artifacts.push(...artifacts.map(artifact => ({ ...artifact, route: routeUrl })));
+        runModel.erroredRoutes.push({
+          url: routeUrl,
+          source,
+          message: error.message,
+          reason: 'scan_error',
+          durationMs: Date.now() - started,
+          artifacts,
+          timestamp: new Date().toISOString(),
+        });
+
+        log('ERROR', `scan error ${routeUrl}`, { message: error.message, artifacts });
+
+        if (stopOnFailRoute || stopOnError) {
+          break;
+        }
+      }
+      }
+    } catch (error) {
+      const artifacts = await captureFailureArtifacts({
+        page,
+        context,
+        routeUrl: page.url() || baseUrl,
+        config,
+        traceChunkOpen: { value: false },
+        log,
+      });
+
+      runModel.artifacts.push(...artifacts.map(artifact => ({ ...artifact, route: page.url() || baseUrl })));
+      runModel.erroredRoutes.push({
+        url: page.url() || baseUrl,
+        source: 'runtime',
+        message: error.message,
+        reason: 'runtime_error',
+        artifacts,
+        timestamp: new Date().toISOString(),
+      });
+
+      log('ERROR', 'runtime error', { message: error.message });
+      abortRun = abortRun || stopOnError;
+    } finally {
+      if (traceEnabled) {
+        try {
+          const fullTrace = path.join(LOG_DIR, 'traces', `full-run-${Date.now()}.zip`);
+          ensureDir(path.dirname(fullTrace));
+          await context.tracing.stop({ path: fullTrace });
+          runModel.artifacts.push({ type: 'trace', path: fullTrace, route: 'full-run' });
+        } catch (error) {
+          log('WARN', 'failed to close global trace', { message: error.message });
+        }
+      }
+
+      await browser.close();
+    }
+  } else {
+    log('WARN', 'scan aborted before browser launch due to stop-on-error preflight failure');
+  }
+
+  const inventorySet = new Set(inventoryRoutes.map(normalizeUrl));
+  const completed = new Set([
+    ...runModel.scannedRoutes.map(route => normalizeUrl(route.url)),
+    ...runModel.skippedRoutes.map(route => normalizeUrl(route.url)),
+    ...runModel.erroredRoutes.map(route => normalizeUrl(route.url)),
+  ]);
+
+  const nonScanned = inventoryRoutes
+    .map(normalizeUrl)
+    .filter(route => route && !completed.has(route));
+
+  runModel.nonScannedRoutes = sortRoutes(nonScanned).map(route => ({
+    url: route,
+    reason: stopOnFailRoute || stopOnError ? 'stopped_early' : 'not_reached',
+    timestamp: new Date().toISOString(),
+  }));
+
+  runModel.discoveredRoutes = sortRoutes([...discoveredSet]);
+
+  runModel.summary.scanned = runModel.scannedRoutes.length;
+  runModel.summary.errored = runModel.erroredRoutes.length;
+  runModel.summary.skipped = runModel.skippedRoutes.length;
+  runModel.summary.nonScanned = runModel.nonScannedRoutes.length;
+  runModel.summary.discovered = runModel.discoveredRoutes.length;
+  runModel.summary.coverage = inventorySet.size === 0
+    ? 100
+    : Math.round(((inventorySet.size - runModel.summary.nonScanned) / inventorySet.size) * 100);
+
+  runModel.metadata.endedAt = new Date().toISOString();
+  runModel.metadata.durationMs = Date.now() - new Date(runModel.metadata.startedAt).getTime();
+
+  const outputs = writeRunOutputs(runModel, log);
+
+  log('INFO', 'scan summary', runModel.summary);
+  log('INFO', `report -> ${outputs.reportFile}`);
+  log('INFO', `todo -> ${outputs.todoFile}`);
+
+  if (runModel.summary.errored > 0 && (stopOnFailRoute || stopOnError)) {
+    process.exitCode = 1;
   }
 }
 
 if (require.main === module) {
-  run();
+  run().catch((error) => {
+    console.error(`[${new Date().toISOString()}] [FATAL]`, error.message);
+    process.exit(1);
+  });
 }
