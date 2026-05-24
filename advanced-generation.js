@@ -438,15 +438,14 @@ async function run() {
   const routeParams = (() => {
     if (!routeParamsRaw) return {};
     const trimmed = routeParamsRaw.trim();
-    const unwrapped = (
-      (trimmed.startsWith("'") && trimmed.endsWith("'"))
-      || (trimmed.startsWith('"') && trimmed.endsWith('"'))
-    )
+    const isWrappedInSingleQuotes = trimmed.startsWith("'") && trimmed.endsWith("'");
+    const isWrappedInDoubleQuotes = trimmed.startsWith('"') && trimmed.endsWith('"');
+    const unwrapped = isWrappedInSingleQuotes || isWrappedInDoubleQuotes
       ? trimmed.slice(1, -1)
       : trimmed;
     try {
       const parsed = JSON.parse(unwrapped);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
       log('WARN', 'ROUTE_PARAMS must be a JSON object; continuing without substitutions');
       return {};
     } catch (error) {
