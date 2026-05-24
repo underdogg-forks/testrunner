@@ -651,7 +651,7 @@ async function run() {
             continue;
           }
 
-          if (skippedSet.has(normalized) || persistedSkippedSet.has(normalized)) {
+          if (skippedSet.has(normalized)) {
             continue;
           }
 

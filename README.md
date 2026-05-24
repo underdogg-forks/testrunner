@@ -103,7 +103,7 @@ Uses `todo.json` (`nonScannedRoutes` + `erroredRoutes`) to continue unfinished c
 make clear
 ```
 
-Clears recorded logs, generated scan artifacts, and `.zip` trace files.
+Clears recorded logs and `.zip` trace artifacts.
 
 ## Report classification
 

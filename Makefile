@@ -121,8 +121,5 @@ playback:
 clear:
 	@echo "Clearing logs and zip artifacts..."
 	@rm -rf storage/logs/*
-	@rm -f recordings/scan-*.json
-	@rm -f tests-playwright/generated-*.spec.js
-	@rm -f todo.json todo.txt
 	@find . -type f -name "*.zip" -not -path "./node_modules/*" -delete
 	@echo "Done."
