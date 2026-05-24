@@ -84,6 +84,7 @@ async function run() {
     if (args[keyIndex + 1] && !args[keyIndex + 1].startsWith('--')) return args[keyIndex + 1].trim();
     return '';
   };
+  const hasFlag = (name) => args.includes(`--${name}`);
 
   const baseUrl = (getArg('baseUrl') || process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
   const routesFile = getArg('routes') || process.env.ROUTES_JSON || process.env.ROUTES_FILE || '';
@@ -94,9 +95,23 @@ async function run() {
   const emailSelector = getArg('emailSelector') || process.env.EMAIL_SELECTOR || 'input[name="email"], input[id="email"]';
   const passwordSelector = getArg('passwordSelector') || process.env.PASSWORD_SELECTOR || 'input[name="password"], input[id="password"]';
   const submitSelector = getArg('submitSelector') || process.env.SUBMIT_SELECTOR || 'button[type="submit"], input[type="submit"]';
-  const headless = (process.env.HEADLESS || 'true') !== 'false';
+  let headless = (process.env.HEADLESS || 'true') !== 'false';
+  const headlessArg = getArg('headless');
+  if (headlessArg !== '') {
+    headless = toBoolean(headlessArg, true);
+  } else if (hasFlag('headless')) {
+    headless = true;
+  }
+  if (toBoolean(process.env.HEADED, false) || hasFlag('headed')) {
+    headless = false;
+  }
   const maxLinksPerPage = Number(getArg('maxLinksPerPage') || process.env.MAX_LINKS_PER_PAGE || 250);
-  const singleRouteInput = getArg('singleRoute') || process.env.SINGLE_ROUTE_PATH || process.env.SINGLE_ROUTE || '';
+  const singleRouteInput = getArg('route')
+    || getArg('singleRoute')
+    || process.env.SINGLE_ROUTE_PATH
+    || process.env.SINGLE_ROUTE
+    || process.env.ROUTE
+    || '';
   const singleRoute = resolveRouteUrl(baseUrl, singleRouteInput);
   const assumeAuthenticated = toBoolean(getArg('assumeAuthenticated') || process.env.ASSUME_AUTHENTICATED, false);
   const requireAuthConfirmation = toBoolean(
@@ -207,6 +222,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     const queue = Array.from(new Set(initialRoutes));
     const visited = new Set();
     const queued = new Set(queue);
+    const allowDiscoveryTraversal = !singleRoute;
 
     log(`Loaded ${queue.length} route(s) from ${routesFile}`);
     if (singleRoute) {
@@ -254,7 +270,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
         await page.fill(emailSelector, email);
         await page.fill(passwordSelector, password);
         await Promise.all([
-          page.waitForURL((url) => !url.includes(loginUrl), { timeout: 15000 }),
+          page.waitForURL((url) => !url.toString().includes(loginUrl), { timeout: 15000 }),
           page.click(submitSelector)
         ]);
         log(`Authenticated using ${loginUrl}`);
@@ -270,6 +286,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     }
 
     const collectInternalLinks = async () => {
+      if (!allowDiscoveryTraversal) return [];
       const urls = await page.evaluate(() => {
         return Array.from(document.querySelectorAll('a[href]')).map((a) => ({
           href: a.href,

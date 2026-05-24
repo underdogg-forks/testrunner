@@ -39,6 +39,18 @@ E2E_PASSWORD=secret
 make auto
 ```
 
+Single route from `make auto`:
+
+```bash
+make auto ROUTE=/dashboard
+```
+
+Headed browser (visible):
+
+```bash
+make auto ROUTE=/dashboard HEADED=true
+```
+
 This logs in, traverses links, fills forms with dummy values, generates Playwright tests, and writes untouched routes to `todo.txt`.
 If login is not confirmed, the run now fails fast with: `Cannot continue without confirmed authenticated state.`
 
@@ -175,8 +187,9 @@ Common variables:
 - `E2E_EMAIL` (`TEST_EMAIL` alias)
 - `E2E_PASSWORD` (`TEST_PASSWORD` alias)
 - `HEADLESS` (`true`/`false`)
+- `HEADED` (`true`/`false`, overrides `HEADLESS` and runs visible browser)
 - `MAX_LINKS_PER_PAGE` (default: `250`)
-- `SINGLE_ROUTE_PATH` or `SINGLE_ROUTE` (example: `/dashboard`)
+- `ROUTE`, `SINGLE_ROUTE_PATH`, or `SINGLE_ROUTE` (example: `/dashboard`)
 - `ASSUME_AUTHENTICATED` (`true`/`false`, default: `false`)
 - `REQUIRE_AUTH_CONFIRMATION` (`true`/`false`, default: `true`)
 
