@@ -1,63 +1,80 @@
 SHELL := /bin/bash
 
-.DEFAULT_GOAL := help
+.PHONY: help install export-routes routes generate-routes auto auto-one test test-one discover record convert-playwright convert-phpunit playback
 
-.PHONY: help install setup routes generate-routes auto auto-one discover record convert-playwright convert-phpunit playback test test-one clean doctor
+ENV_FILE ?= .env
+
+include $(ENV_FILE)
+export $(shell sed 's/=.*//' $(ENV_FILE) 2>/dev/null)
 
 help:
-	@echo "Playwright E2E Tooling"
-	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
+	@echo "Route Discovery System"
+	@echo
+	@echo "Core commands:"
+	@echo "  make install"
+	@echo "  make export-routes"
+	@echo "  make auto"
+	@echo "  make auto-one ROUTE=/dashboard"
+	@echo "  make test"
+	@echo "  make test-one ROUTE=/dashboard"
+	@echo
 
-install: ## Install dependencies + Playwright browsers
-	npm run install:deps
+install:
+	npm install
+	npx playwright install chromium
 
-setup: install ## Full setup
-	@echo "Setup complete"
+export-routes:
+	php artisan route:list --json > routes.json
 
-routes: ## Export Laravel routes
-	npm run routes:export
+routes: export-routes
 
-generate-routes: ## Generate Playwright specs from routes.json
+generate-routes:
 	npm run routes:generate
 
-auto: ## Run full authenticated traversal
+auto:
+	@if [ -z "$(ROUTES_JSON)" ]; then echo "❌ ROUTES_JSON missing"; exit 1; fi
+	ROUTES_JSON=$(ROUTES_JSON) \
+	APP_URL=$(APP_URL) \
+	LOGIN_PATH=$(LOGIN_PATH) \
+	DASHBOARD_PATH=$(DASHBOARD_PATH) \
+	E2E_EMAIL=$(E2E_EMAIL) \
+	E2E_PASSWORD=$(E2E_PASSWORD) \
+	HEADLESS=$(HEADLESS) \
+	ASSUME_AUTHENTICATED=$(ASSUME_AUTHENTICATED) \
+	REQUIRE_AUTH_CONFIRMATION=$(REQUIRE_AUTH_CONFIRMATION) \
 	npm run auto
 
-auto-one: ## Run single route traversal (ROUTE required)
-	@test -n "$(ROUTE)" || (echo "Missing ROUTE. Example: make auto-one ROUTE=/dashboard" && exit 1)
-	npm run auto:single -- --singleRoute $(ROUTE)
+auto-one:
+	@test -n "$(ROUTE)" || (echo "Usage: make auto-one ROUTE=/dashboard [HEADED=true]" && exit 1)
+	ROUTE=$(ROUTE) \
+	ROUTES_JSON=$(ROUTES_JSON) \
+	APP_URL=$(APP_URL) \
+	HEADLESS=false \
+	HEADED=$(HEADED) \
+	ASSUME_AUTHENTICATED=$(ASSUME_AUTHENTICATED) \
+	npm run auto
 
-discover: ## Run discovery mode
+test:
+	npx playwright test
+
+test-one:
+	@test -n "$(ROUTE)" || (echo "Usage: make test-one ROUTE=/dashboard" && exit 1)
+	npx playwright test --grep "$(ROUTE)"
+
+discover:
 	npm run discover
 
-record: ## Manual recording session
+record:
 	npm run record
 
-convert-playwright: ## Convert recording to Playwright (RECORDING required)
-	@test -n "$(RECORDING)" || (echo "Missing RECORDING. Example: make convert-playwright RECORDING=recordings/session.json" && exit 1)
-	npm run convert:playwright -- $(RECORDING)
+convert-playwright:
+	@test -n "$(RECORDING)" || (echo "Usage: make convert-playwright RECORDING=..." && exit 1)
+	npm run convert:playwright $(RECORDING)
 
-convert-phpunit: ## Convert recording to PHPUnit (RECORDING required)
-	@test -n "$(RECORDING)" || (echo "Missing RECORDING. Example: make convert-phpunit RECORDING=recordings/session.json" && exit 1)
-	npm run convert:phpunit -- $(RECORDING)
+convert-phpunit:
+	@test -n "$(RECORDING)" || (echo "Usage: make convert-phpunit RECORDING=..." && exit 1)
+	npm run convert:phpunit $(RECORDING)
 
-playback: ## Replay recording (RECORDING required)
-	@test -n "$(RECORDING)" || (echo "Missing RECORDING. Example: make playback RECORDING=recordings/session.json" && exit 1)
-	npm run playback -- $(RECORDING)
-
-test: ## Run Playwright tests
-	npm run test
-
-test-one: ## Run single test (ROUTE required)
-	@test -n "$(ROUTE)" || (echo "Missing ROUTE. Example: make test-one ROUTE=/dashboard" && exit 1)
-	npm run test:one -- $(ROUTE)
-
-clean: ## Clean generated files
-	rm -rf recordings tests-playwright storage/logs/*.log todo.txt
-
-doctor: ## Validate environment
-	@node -v >/dev/null 2>&1 || (echo "Node missing" && exit 1)
-	@npx playwright --version >/dev/null 2>&1 || (echo "Playwright missing" && exit 1)
-	@test -f routes.json || echo "Warning: routes.json missing"
-	@test -f .env || echo "Warning: .env missing"
+playback:
+	@test -n "$(RECORDING)" || (echo "Usage: make playback RECORDING=..." && exit 1)
+	npm run playback $(RECORDING)
