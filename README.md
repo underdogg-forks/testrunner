@@ -56,7 +56,7 @@ If login is not confirmed, the run now fails fast with: `Cannot continue without
 
 ## Single-route run (`/dashboard`)
 
-Use this when you want one route only:
+Use this when you want one route only. `auto-one` now opens a visible browser by default, visits the requested route first, logs in if the app redirects to the login page, then returns to the requested route and records the links found there:
 
 ```bash
 make auto-one ROUTE=/dashboard
@@ -167,7 +167,7 @@ Use `make help` to list commands:
 - `make export-routes`
 - `make generate-routes`
 - `make auto` (requires confirmed authentication)
-- `make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true]`
+- `make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true] [HEADED=true]`
 - `make test`
 - `make test-one ROUTE=/dashboard`
 - `make discover`
