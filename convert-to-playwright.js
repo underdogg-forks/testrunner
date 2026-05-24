@@ -44,7 +44,7 @@ function toPhenomenon(pathname) {
   return sanitizeSegment(segment) || 'core';
 }
 
-function toControllerName(phenomenon) {
+function toDescribeName(phenomenon) {
   const normalized = sanitizeSegment(phenomenon) || 'core';
   return normalized
     .split('-')
@@ -176,11 +176,11 @@ function renderGroupedSpec({ session, recordingFile, describeName, events }) {
             stepCounter++;
             break;
           case 'formData':
-            if (event.data?.type !== 'form-submission') {
-              testCode += generateFormInputStep(event, stepCounter);
+            if (event.data?.type === 'form-submission') {
+              testCode += generateFormSubmissionStep(event, session, stepCounter);
               stepCounter++;
             } else {
-              testCode += generateFormSubmissionStep(event, session, stepCounter);
+              testCode += generateFormInputStep(event, stepCounter);
               stepCounter++;
             }
             break;
@@ -254,7 +254,7 @@ function convertToPlaywright(recordingFile, outputFile, options = {}) {
       fs.mkdirSync(phenomenonDir, { recursive: true });
 
       const phenomenonFile = path.join(phenomenonDir, outputName);
-      const describeName = toControllerName(phenomenon);
+      const describeName = toDescribeName(phenomenon);
       const testCode = renderGroupedSpec({
         session,
         recordingFile,
@@ -295,14 +295,14 @@ function generateRouteStep(event, step) {
  */
 function generateClickStep(event, step) {
   const comment = event.text ? `Click "${event.text}"` : `Click ${event.tagName}`;
-  const selectorLocatorCode = event.selector ? `page.locator('${escapeSelector(event.selector)}').first()` : null;
-  const textLocatorCode = event.text ? `page.getByText('${escapeValue(event.text)}').first()` : null;
-  const chosenLocatorCode = selectorLocatorCode || textLocatorCode;
-  const clickAction = chosenLocatorCode
-    ? `const element = ${chosenLocatorCode};
+  const selectorCode = event.selector ? `page.locator('${escapeSelector(event.selector)}').first()` : null;
+  const textCode = event.text ? `page.getByText('${escapeValue(event.text)}').first()` : null;
+  const locatorCode = selectorCode || textCode;
+  const clickAction = locatorCode
+    ? `const element = ${locatorCode};
       await element.waitFor({ state: 'visible', timeout: 10000 });
       await element.click();`
-    : `// No selector or text captured for this click; skipping replay action.`;
+    : `// No selector or text captured for this click; skipping click action.`;
   
   return `
     // Step ${step}: ${comment}
@@ -319,8 +319,8 @@ function generateClickStep(event, step) {
 function generateFormInputStep(event, step) {
   if (!event.data) {
     return `
-    // Step ${step}: Form input event missing payload data
-    // Skipped because no form data payload was captured
+    // Step ${step}: Form input event missing data
+    // Skipped because no data payload was captured
 `;
   }
 

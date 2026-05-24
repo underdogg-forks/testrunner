@@ -395,7 +395,8 @@ function writeRunOutputs(runModel, log) {
       phenomenonOutputDir: TESTS_DIR,
     });
     generatedSpecFiles = Array.isArray(generated) ? generated : [];
-    log('INFO', `generated playwright specs -> ${generatedSpecFiles.length} file(s) in ${TESTS_DIR}`);
+    const fileWord = generatedSpecFiles.length === 1 ? 'file' : 'files';
+    log('INFO', `generated playwright specs -> ${generatedSpecFiles.length} ${fileWord} in ${TESTS_DIR}`);
   } catch (error) {
     log('ERROR', 'playwright generation failed (scan report preserved)', { message: error.message });
   }
