@@ -100,7 +100,7 @@ make test              # 5 — run generated Playwright tests
 | `storage/logs/run-report.json` | Latest scan report |
 | `storage/logs/run-report-<ts>.json` | Timestamped copy |
 | `recordings/scan-<ts>.json` | Session JSON (input for `convert-to-playwright.js`) |
-| `tests-playwright/generated-<ts>.spec.js` | Auto-generated Playwright spec |
+| `tests-playwright/<phenomenon>/generated-<ts>.spec.js` | Auto-generated Playwright specs split by phenomenon |
 | `todo.json` | Routes not yet scanned |
 | `skipped.json` | Persisted skipped routes |
 | `todo.txt` | Human-readable todo list |

@@ -7,7 +7,7 @@ const { sortRoutes } = require('./utils');
 
 const LOG_DIR = 'storage/logs';
 const RECORDINGS_DIR = 'recordings';
-const TESTS_DIR = 'tests-playwright';
+const TESTS_DIR = process.env.E2E_TESTS_DIR || 'tests-playwright';
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -384,18 +384,23 @@ function writeRunOutputs(runModel, log) {
   const scanSession = toScanSession(runModel);
   const scanSessionFile = path.join(RECORDINGS_DIR, `scan-${stamp}.json`);
   const generatedSpecFile = path.join(TESTS_DIR, `generated-${stamp}.spec.js`);
+  let generatedSpecFiles = [generatedSpecFile];
 
   fs.writeFileSync(scanSessionFile, JSON.stringify(scanSession, null, 2));
 
   ensureDir(TESTS_DIR);
   try {
-    convertToPlaywright(scanSessionFile, generatedSpecFile);
-    log('INFO', `generated playwright spec -> ${generatedSpecFile}`);
+    const generated = convertToPlaywright(scanSessionFile, generatedSpecFile, {
+      splitByPhenomenon: true,
+      phenomenonOutputDir: TESTS_DIR,
+    });
+    generatedSpecFiles = Array.isArray(generated) && generated.length > 0 ? generated : generatedSpecFiles;
+    log('INFO', `generated playwright specs -> ${generatedSpecFiles.length} file(s) in ${TESTS_DIR}`);
   } catch (error) {
     log('ERROR', 'playwright generation failed (scan report preserved)', { message: error.message });
   }
 
-  return { reportFile, latestReportFile, todoFile, scanSessionFile, generatedSpecFile };
+  return { reportFile, latestReportFile, todoFile, scanSessionFile, generatedSpecFile, generatedSpecFiles };
 }
 
 function dedupeUrls(urls) {
@@ -810,6 +815,9 @@ async function run() {
   log('INFO', `report  -> ${outputs.latestReportFile}`);
   log('INFO', `session -> ${outputs.scanSessionFile}`);
   log('INFO', `spec    -> ${outputs.generatedSpecFile}`);
+  if (Array.isArray(outputs.generatedSpecFiles)) {
+    outputs.generatedSpecFiles.forEach((filePath) => log('INFO', `spec file -> ${filePath}`));
+  }
   log('INFO', `todo    -> ${outputs.todoFile}`);
   log('INFO', `skipped -> ${skippedRoutesFile}`);
 
@@ -817,7 +825,11 @@ async function run() {
   console.log(`  Run tests:          make test`);
   console.log(`  Resume unfinished:  make scan-todo`);
   console.log(`  View report:        ${outputs.latestReportFile}`);
-  console.log(`  Generated spec:     ${outputs.generatedSpecFile}\n`);
+  console.log(`  Generated spec:     ${outputs.generatedSpecFile}`);
+  if (Array.isArray(outputs.generatedSpecFiles) && outputs.generatedSpecFiles.length > 1) {
+    console.log(`  Generated files:    ${outputs.generatedSpecFiles.length} grouped specs`);
+  }
+  console.log('');
 
   if (runModel.summary.errored > 0 && (stopOnFailRoute || stopOnError)) {
     process.exitCode = 1;
