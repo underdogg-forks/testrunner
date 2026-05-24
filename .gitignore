@@ -20,18 +20,13 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
-*.swo
-*~
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # Temporary files
 *.tmp
 .temp/
 tmp/
+/routes.json
+/testresults.txt
+/todo.txt
 *.backup
 *-corrupted.js
