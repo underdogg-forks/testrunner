@@ -26,7 +26,7 @@ make auto            # scan all routes, generate tests
 **Outputs:**
 
 - `recordings/scan-<timestamp>.json` — raw session data
-- `tests-playwright/generated-<timestamp>.spec.js` — ready-to-run Playwright tests
+- `tests-playwright/<phenomenon>/generated-<timestamp>.spec.js` — ready-to-run Playwright tests split by phenomenon
 - `storage/logs/run-report.json` — scan report
 
 ### 2. Shallow Scan (no routes.json required)

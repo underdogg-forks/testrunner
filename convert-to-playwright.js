@@ -20,25 +20,113 @@ const { buildTimeline, escapeSelector, escapeValue } = require('./utils');
  * tests-playwright/generated-test-[timestamp].spec.js
  */
 
-/**
- * Main conversion function
- * @param {string} recordingFile - Path to the recording JSON file
- * @param {string} outputFile - Path where the test file should be saved
- */
-function convertToPlaywright(recordingFile, outputFile) {
-  console.log(`\n🔄 Converting ${recordingFile} to Playwright test...\n`);
-  
-  // ============================================================
-  // LOAD RECORDING DATA
-  // ============================================================
-  
-  const session = JSON.parse(fs.readFileSync(recordingFile, 'utf8'));
-  
-  // ============================================================
-  // GENERATE TEST FILE HEADER
-  // ============================================================
-  
-  let testCode = `/**
+function toPathname(value) {
+  if (!value) return '/';
+  try {
+    return new URL(value).pathname || '/';
+  } catch {
+    return String(value).startsWith('/') ? String(value) : '/';
+  }
+}
+
+function sanitizeSegment(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function toPhenomenon(pathname) {
+  const segment = String(pathname || '/')
+    .replace(/^\/+/, '')
+    .split('/')[0];
+  return sanitizeSegment(segment) || 'core';
+}
+
+function toControllerName(phenomenon) {
+  const normalized = sanitizeSegment(phenomenon) || 'core';
+  return normalized
+    .split('-')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('') + 'Controller';
+}
+
+function eventPathname(event) {
+  if (!event) return '/';
+  if (event.type === 'route') return event.path || toPathname(event.to);
+  if (event.type === 'click') return event.pathname || toPathname(event.url);
+  if (event.type === 'formData') return event.data?.pathname || toPathname(event.data?.url);
+  if (event.type === 'network') return toPathname(event.url);
+  return '/';
+}
+
+function groupEventsByPhenomenon(timeline) {
+  const groups = new Map();
+  let currentPhenomenon = 'core';
+
+  for (const event of timeline) {
+    const pathname = eventPathname(event);
+    const candidate = toPhenomenon(pathname);
+    const phenomenon = event.type === 'route' || candidate !== 'core'
+      ? candidate
+      : currentPhenomenon;
+
+    if (event.type === 'route') currentPhenomenon = phenomenon;
+
+    if (!groups.has(phenomenon)) groups.set(phenomenon, []);
+    groups.get(phenomenon).push(event);
+  }
+
+  if (groups.size === 0) {
+    groups.set('core', []);
+  }
+
+  return groups;
+}
+
+function groupEventsByRoute(events) {
+  const routeGroups = [];
+  let currentGroup = null;
+  let currentRoute = '';
+
+  for (const event of events) {
+    if (event.type === 'route' && event.to && event.to !== currentRoute) {
+      if (currentGroup && currentGroup.events.length > 0) {
+        routeGroups.push(currentGroup);
+      }
+
+      currentRoute = event.to;
+      currentGroup = {
+        route: currentRoute,
+        path: event.path || toPathname(event.to),
+        events: [event],
+      };
+      continue;
+    }
+
+    if (!currentGroup) {
+      const inferredPath = eventPathname(event);
+      currentGroup = {
+        route: inferredPath,
+        path: inferredPath,
+        events: [],
+      };
+    }
+
+    currentGroup.events.push(event);
+  }
+
+  if (currentGroup && currentGroup.events.length > 0) {
+    routeGroups.push(currentGroup);
+  }
+
+  return routeGroups;
+}
+
+function createHeader(session, recordingFile) {
+  return `/**
  * Auto-generated Playwright Test
  * Generated from: ${path.basename(recordingFile)}
  * Recording date: ${session.metadata.startTime}
@@ -53,81 +141,149 @@ function convertToPlaywright(recordingFile, outputFile) {
 
 import { test, expect } from '@playwright/test';
 
-test.describe('Recorded User Session', () => {
-  
-  test('should replay user interactions', async ({ page }) => {
 `;
+}
+
+function renderGroupedSpec({ session, recordingFile, describeName, events }) {
+  const routeGroups = groupEventsByRoute(events);
+  let testCode = createHeader(session, recordingFile);
+
+  testCode += `test.describe('${escapeValue(describeName)}', () => {\n`;
+
+  if (routeGroups.length === 0) {
+    testCode += `
+  test('should have recorded interactions', async () => {
+    expect(true).toBeTruthy();
+  });
+`;
+  } else {
+    let testIndex = 1;
+    for (const group of routeGroups) {
+      const pathName = group.path || '/';
+      let stepCounter = 1;
+      testCode += `
+  test('should replay ${escapeValue(pathName)} interactions (${testIndex})', async ({ page }) => {
+`;
+
+      for (const event of group.events) {
+        switch (event.type) {
+          case 'route':
+            testCode += generateRouteStep(event, stepCounter);
+            stepCounter++;
+            break;
+          case 'click':
+            testCode += generateClickStep(event, stepCounter);
+            stepCounter++;
+            break;
+          case 'formData':
+            if (event.data?.type !== 'form-submission') {
+              testCode += generateFormInputStep(event, stepCounter);
+              stepCounter++;
+            } else {
+              testCode += generateFormSubmissionStep(event, session, stepCounter);
+              stepCounter++;
+            }
+            break;
+          case 'network':
+            testCode += generateNetworkAssertion(event, stepCounter);
+            break;
+        }
+      }
+
+      testCode += `
+  });
+`;
+      testIndex++;
+    }
+  }
+
+  testCode += `
+});
+`;
+
+  return testCode;
+}
+
+/**
+ * Main conversion function
+ * @param {string} recordingFile - Path to the recording JSON file
+ * @param {string} outputFile - Path where the test file should be saved
+ * @param {Object} options - Optional generation settings
+ */
+function convertToPlaywright(recordingFile, outputFile, options = {}) {
+  console.log(`\n🔄 Converting ${recordingFile} to Playwright test...\n`);
+  
+  // ============================================================
+  // LOAD RECORDING DATA
+  // ============================================================
+  
+  const rawSession = JSON.parse(fs.readFileSync(recordingFile, 'utf8'));
+  const session = {
+    ...rawSession,
+    metadata: rawSession.metadata || {},
+    clicks: Array.isArray(rawSession.clicks) ? rawSession.clicks : [],
+    routes: Array.isArray(rawSession.routes) ? rawSession.routes : [],
+    formData: Array.isArray(rawSession.formData) ? rawSession.formData : [],
+    networkRequests: Array.isArray(rawSession.networkRequests) ? rawSession.networkRequests : [],
+  };
 
   // ============================================================
   // BUILD TEST STEPS
   // ============================================================
   
-  /**
-   * Combine all events into a chronological timeline
-   * This ensures actions happen in the correct order
-   */
   const timeline = buildTimeline(session);
-  
-  let currentUrl = '';
-  let stepCounter = 1;
-  
-  for (const event of timeline) {
-    switch (event.type) {
-      case 'route':
-        testCode += generateRouteStep(event, stepCounter);
-        currentUrl = event.to;
-        stepCounter++;
-        break;
-        
-      case 'click':
-        testCode += generateClickStep(event, stepCounter);
-        stepCounter++;
-        break;
-        
-      case 'formData':
-        if (event.data.type !== 'form-submission') {
-          testCode += generateFormInputStep(event, stepCounter);
-          stepCounter++;
-        } else {
-          testCode += generateFormSubmissionStep(event, session, stepCounter);
-          stepCounter++;
-        }
-        break;
-        
-      case 'network':
-        // Network requests are handled implicitly but we can add assertions
-        testCode += generateNetworkAssertion(event, stepCounter);
-        break;
+  const splitByPhenomenon = options.splitByPhenomenon === true;
+  const generatedFiles = [];
+
+  if (!splitByPhenomenon) {
+    const testCode = renderGroupedSpec({
+      session,
+      recordingFile,
+      describeName: 'Recorded User Session',
+      events: timeline,
+    });
+    fs.writeFileSync(outputFile, testCode);
+    generatedFiles.push(outputFile);
+  } else {
+    const groups = groupEventsByPhenomenon(timeline);
+    const outputRoot = options.phenomenonOutputDir || path.dirname(outputFile);
+    const outputName = path.basename(outputFile);
+
+    for (const [phenomenon, events] of groups.entries()) {
+      const phenomenonDir = path.join(outputRoot, phenomenon);
+      fs.mkdirSync(phenomenonDir, { recursive: true });
+
+      const phenomenonFile = path.join(phenomenonDir, outputName);
+      const describeName = toControllerName(phenomenon);
+      const testCode = renderGroupedSpec({
+        session,
+        recordingFile,
+        describeName,
+        events,
+      });
+
+      fs.writeFileSync(phenomenonFile, testCode);
+      generatedFiles.push(phenomenonFile);
     }
   }
-  
-  // ============================================================
-  // CLOSE TEST STRUCTURE
-  // ============================================================
-  
-  testCode += `
-  });
-});
-`;
 
-  // ============================================================
-  // WRITE TEST FILE
-  // ============================================================
-  
-  fs.writeFileSync(outputFile, testCode);
-  
   console.log(`✅ Playwright test generated successfully!`);
-  console.log(`📄 File: ${outputFile}`);
-  console.log(`\n▶️  Run with: npx playwright test ${outputFile}\n`);
+  for (const file of generatedFiles) {
+    console.log(`📄 File: ${file}`);
+  }
+  console.log(`\n▶️  Run with: npx playwright test\n`);
+
+  return generatedFiles;
 }
 
 /**
  * Generates code for a route navigation step
  */
 function generateRouteStep(event, step) {
+  const routePath = event.path || toPathname(event.to);
   return `
     // Step ${step}: Navigate to ${event.to}
-    await test.step('Navigate to ${event.path}', async () => {
+    await test.step('Navigate to ${routePath}', async () => {
       await page.goto('${event.to}');
       await page.waitForLoadState('networkidle');
     });
@@ -139,13 +295,19 @@ function generateRouteStep(event, step) {
  */
 function generateClickStep(event, step) {
   const comment = event.text ? `Click "${event.text}"` : `Click ${event.tagName}`;
+  const selector = event.selector ? `page.locator('${escapeSelector(event.selector)}').first()` : null;
+  const textLocator = event.text ? `page.getByText('${escapeValue(event.text)}').first()` : null;
+  const element = selector || textLocator;
+  const clickAction = element
+    ? `const element = ${element};
+      await element.waitFor({ state: 'visible', timeout: 10000 });
+      await element.click();`
+    : `// No selector or text captured for this click; skipping replay action.`;
   
   return `
     // Step ${step}: ${comment}
     await test.step('${comment}', async () => {
-      const element = page.locator('${escapeSelector(event.selector)}').first();
-      await element.waitFor({ state: 'visible', timeout: 10000 });
-      await element.click();
+      ${clickAction}
       await page.waitForLoadState('networkidle');
     });
 `;
@@ -157,11 +319,14 @@ function generateClickStep(event, step) {
 function generateFormInputStep(event, step) {
   const fieldName = event.data.name || event.data.id || 'field';
   const value = event.data.value || '';
+  const locator = event.data.selector
+    ? `page.locator('${escapeSelector(event.data.selector)}')`
+    : `page.locator('[name="${escapeSelector(fieldName)}"], #${escapeSelector(fieldName)}').first()`;
   
   return `
     // Step ${step}: Fill "${fieldName}" with "${value}"
     await test.step('Fill ${fieldName}', async () => {
-      await page.locator('${escapeSelector(event.data.selector)}').fill('${escapeValue(value)}');
+      await ${locator}.fill('${escapeValue(value)}');
     });
 `;
 }
@@ -206,7 +371,11 @@ function generateNetworkAssertion(event, step) {
 // ============================================================
 
 if (require.main === module) {
-  const recordingFile = process.argv[2];
+  const args = process.argv.slice(2);
+  const recordingFile = args.find(arg => !arg.startsWith('--'));
+  const splitByPhenomenon = args.includes('--split-by-phenomenon') || args.includes('--split');
+  const outputDirArg = args.find(arg => arg.startsWith('--output-dir='));
+  const outputDirFromArg = outputDirArg ? outputDirArg.split('=').slice(1).join('=').trim() : '';
   
   if (!recordingFile) {
     console.error('❌ Error: Please provide a recording file');
@@ -221,11 +390,14 @@ if (require.main === module) {
   
   // Generate output filename
   const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
-  const outputDir = 'tests-playwright';
+  const outputDir = outputDirFromArg || process.env.E2E_TESTS_DIR || 'tests-playwright';
   fs.mkdirSync(outputDir, { recursive: true });
   const outputFile = path.join(outputDir, `generated-test-${timestamp}.spec.js`);
   
-  convertToPlaywright(recordingFile, outputFile);
+  convertToPlaywright(recordingFile, outputFile, {
+    splitByPhenomenon,
+    phenomenonOutputDir: outputDir,
+  });
 }
 
 module.exports = { convertToPlaywright };

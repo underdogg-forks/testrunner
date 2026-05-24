@@ -100,7 +100,11 @@ When it finishes you will see output like:
 [INFO] spec     -> tests-playwright/generated-2025-01-01T12-00-00.spec.js
 ```
 
-The `.spec.js` file is a ready-to-run Playwright test file.
+Generated specs are written per top-level route phenomenon (for example `clients`, `tasks`, `projects`) at:
+
+- `tests-playwright/<phenomenon>/generated-<timestamp>.spec.js`
+
+Each generated file contains route-grouped tests instead of one single giant test.
 
 ---
 
@@ -182,6 +186,7 @@ E2E_PASSWORD=yourpassword
 # Optional — route file
 ROUTES_JSON=routes.json
 SKIPPED_JSON=skipped.json
+E2E_TESTS_DIR=tests-playwright
 
 # Optional — parameterized routes
 # Wrap in single quotes to avoid shell/Makefile issues
@@ -210,7 +215,7 @@ After every scan you will find these files:
 | `storage/logs/run-report.json` | Full report of the latest scan |
 | `storage/logs/run-report-<timestamp>.json` | Historical copy |
 | `recordings/scan-<timestamp>.json` | Session data (use with `convert-playwright`) |
-| `tests-playwright/generated-<timestamp>.spec.js` | Auto-generated Playwright tests |
+| `tests-playwright/<phenomenon>/generated-<timestamp>.spec.js` | Auto-generated Playwright tests grouped by phenomenon |
 | `todo.json` | Pages not yet scanned — input for `make scan-todo` |
 | `skipped.json` | Pages skipped due to errors — persists across runs |
 | `todo.txt` | Human-readable version of `todo.json` |
