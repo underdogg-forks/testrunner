@@ -10,7 +10,7 @@ help: ## Show all commands
 	@echo "  2) php artisan route:list --json > routes.json"
 	@echo "  3) create .env with APP_URL, ROUTES_JSON, LOGIN_PATH, DASHBOARD_PATH, E2E_EMAIL, E2E_PASSWORD"
 	@echo "  4) make auto"
-	@echo "  5) make auto-one ROUTE=/dashboard ASSUME_AUTHENTICATED=true  # single-route TDD run"
+	@echo "  5) make auto-one ROUTE=/dashboard  # headed single-route run with login"
 	@echo "     Optional for auto: ROUTE=/dashboard HEADED=true"
 	@echo
 	@echo "Commands:"
@@ -35,9 +35,12 @@ auto: ## Run automatic flow. Optional: ROUTE=/dashboard HEADED=true
 	if [ "$$headed" = "true" ]; then extra_args="$$extra_args --headed"; fi; \
 	npm run generate:playwright:auto -- $$extra_args
 
-auto-one: ## Run automatic flow for one route (ROUTE=/dashboard). Set ASSUME_AUTHENTICATED=true to skip login confirmation.
-	@test -n "$(ROUTE)" || (echo "Usage: make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true]" && exit 1)
-	ASSUME_AUTHENTICATED=$${ASSUME_AUTHENTICATED:-false} npm run generate:playwright:auto -- --singleRoute "$(ROUTE)"
+auto-one: ## Run headed automatic flow for one route (ROUTE=/dashboard). Set ASSUME_AUTHENTICATED=true to skip login confirmation.
+	@test -n "$(ROUTE)" || (echo "Usage: make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true] [HEADED=true]" && exit 1)
+	@headed="$${HEADED:-true}"; \
+	extra_args="--singleRoute $(ROUTE)"; \
+	if [ "$$headed" = "true" ]; then extra_args="$$extra_args --headed"; fi; \
+	ASSUME_AUTHENTICATED=$${ASSUME_AUTHENTICATED:-false} npm run generate:playwright:auto -- $$extra_args
 
 test: ## Run all Playwright tests
 	npx playwright test

@@ -13,6 +13,11 @@ function normalizeUrl(url) {
     : noQuery;
 }
 
+function urlIncludes(url, expected) {
+  if (!url || !expected) return false;
+  return String(url).includes(expected);
+}
+
 function toBoolean(value, defaultValue = false) {
   if (value === undefined || value === null || value === '') return defaultValue;
   return String(value).toLowerCase() === 'true';
@@ -111,6 +116,7 @@ async function run() {
     || process.env.ROUTE
     || '';
   const singleRoute = resolveRouteUrl(baseUrl, singleRouteInput);
+  const authProbeUrl = singleRoute || resolveRouteUrl(baseUrl, dashboardUrl) || baseUrl;
   const assumeAuthenticated = toBoolean(getArg('assumeAuthenticated') || process.env.ASSUME_AUTHENTICATED, false);
   const requireAuthConfirmation = toBoolean(
     getArg('requireAuthConfirmation') || process.env.REQUIRE_AUTH_CONFIRMATION,
@@ -264,17 +270,19 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
       log('ASSUME_AUTHENTICATED=true, skipping login confirmation', 'WARN');
     } else {
       try {
-        await page.goto(`${baseUrl}${loginUrl}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page.fill(emailSelector, email);
-        await page.fill(passwordSelector, password);
-        await Promise.all([
-          page.waitForURL((url) => !url.toString().includes(loginUrl), { timeout: 15000 }),
-          page.click(submitSelector)
-        ]);
-        log(`Authenticated using ${loginUrl}`);
-        await page.goto(`${baseUrl}${dashboardUrl}`, { waitUntil: 'domcontentloaded', timeout: 15000 })
-          .then(() => log(`Reached dashboard at ${dashboardUrl}`))
-          .catch((error) => log(`Could not reach dashboard (${dashboardUrl}): ${error.message}`, 'WARN'));
+        await page.goto(authProbeUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        if (urlIncludes(page.url(), loginUrl)) {
+          log(`Authentication required before visiting ${authProbeUrl}`);
+          await page.fill(emailSelector, email);
+          await page.fill(passwordSelector, password);
+          await Promise.all([
+            page.waitForURL((url) => !urlIncludes(url, loginUrl), { timeout: 15000 }),
+            page.click(submitSelector)
+          ]);
+          log(`Authenticated using ${loginUrl}`);
+          await page.goto(authProbeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        }
+        log(`Reached authenticated route at ${authProbeUrl}`);
       } catch (error) {
         recordProblem('login', error);
         const authError = 'Cannot continue without confirmed authenticated state.';
@@ -284,7 +292,6 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     }
 
     const collectInternalLinks = async () => {
-      if (!allowDiscoveryTraversal) return [];
       const urls = await page.evaluate(() => {
         return Array.from(document.querySelectorAll('a[href]')).map((a) => ({
           href: a.href,
@@ -305,11 +312,13 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
 
       for (const found of internalLinks) {
         const normalized = found.href;
+        touchedAllLinksChecklist.add(normalized);
         if (routeChecklist.has(normalized)) {
           matchedDiscoveredLinks.add(normalized);
         } else {
           unmatchedDiscoveredLinks.add(normalized);
         }
+        if (!allowDiscoveryTraversal) continue;
         if (!normalized || queued.has(normalized) || visited.has(normalized)) continue;
         queued.add(normalized);
         queue.push(normalized);

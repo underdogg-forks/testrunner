@@ -2,6 +2,11 @@ const { chromium, errors } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
+function urlIncludes(url, fragment) {
+    if (!url || !fragment) return false;
+    return String(url).includes(fragment);
+}
+
 /**
  * A class to launch a browser, crawl an application, discover routes,
  * and automatically generate boilerplate Jest and Playwright E2E tests.
@@ -178,7 +183,7 @@ class RouteDiscovery {
             
             await Promise.all([
                 // Wait for URL to change (away from the login URL)
-                page.waitForURL(url => !url.includes(this.options.loginUrl), { timeout: 30000 }),
+                page.waitForURL(url => !urlIncludes(url, this.options.loginUrl), { timeout: 30000 }),
                 page.click(this.options.submitSelector)
             ]);
 
@@ -201,7 +206,7 @@ class RouteDiscovery {
         
         try {
             // Start waiting for the URL to change
-            const navigationPromise = page.waitForURL(url => url !== initialUrl, { timeout: 15000 });
+            const navigationPromise = page.waitForURL(url => String(url) !== initialUrl, { timeout: 15000 });
             
             // Perform the click action
             await element.click();
@@ -397,7 +402,7 @@ beforeAll(async () => {
   await page.fill('${this.options.passwordSelector}', '${this.options.password}');
   
   await Promise.all([
-    page.waitForURL(url => !url.includes('${this.options.loginUrl}')),
+    page.waitForURL(url => !url.toString().includes('${this.options.loginUrl}')),
     page.click('${this.options.submitSelector}')
   ]);
   
@@ -446,7 +451,7 @@ async function globalSetup() {
   await page.fill('${this.options.passwordSelector}', '${this.options.password}');
   
   await Promise.all([
-    page.waitForURL(url => !url.includes('${this.options.loginUrl}')),
+    page.waitForURL(url => !url.toString().includes('${this.options.loginUrl}')),
     page.click('${this.options.submitSelector}')
   ]);
   
@@ -513,7 +518,7 @@ ${tests}
     // Submit form and wait for navigation (Filament often redirects on success)
     await Promise.all([
       // Wait for URL change away from the form URL
-      page.waitForURL(url => !url.includes('${relativeUrl}'), { timeout: 15000 }), 
+      page.waitForURL(url => !url.toString().includes('${relativeUrl}'), { timeout: 15000 }), 
       page.click('${this.options.submitSelector}')
     ]);
     
@@ -570,7 +575,7 @@ ${tests}
       
       await Promise.all([
         // Wait for URL change (assuming a redirect on success)
-        page.waitForURL(url => !url.includes('${relativeUrl}'), { timeout: 15000 }), 
+        page.waitForURL(url => !url.toString().includes('${relativeUrl}'), { timeout: 15000 }), 
         page.click('${this.options.submitSelector}')
       ]);
     });
