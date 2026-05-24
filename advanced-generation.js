@@ -290,7 +290,7 @@ function writeRunOutputs(runModel, log) {
   const latestReportFile = path.join(LOG_DIR, 'run-report.json');
   const todoFile = path.join(process.cwd(), 'todo.json');
 
-  const todoRoutes = dedupeUrls([
+  const todoUrls = dedupeUrls([
     ...runModel.nonScannedRoutes.map(r => r.url),
     ...runModel.erroredRoutes.map(r => r.url),
   ]);
@@ -298,7 +298,7 @@ function writeRunOutputs(runModel, log) {
   const todoPayload = {
     generatedAt: new Date().toISOString(),
     report: reportFile,
-    routes: todoRoutes,
+    routes: todoUrls,
     nonScannedRoutes: runModel.nonScannedRoutes,
     erroredRoutes: runModel.erroredRoutes,
     skippedRoutes: runModel.skippedRoutes,
