@@ -28,8 +28,8 @@ generate-routes: ## Generate Playwright specs directly from routes.json
 	npm run generate:playwright:routes
 
 auto: ## Run automatic flow. Optional: ROUTE=/dashboard HEADED=true
-	@route="$${ROUTE:-$${route:-}}"; \
-	headed="$${HEADED:-$${headed:-false}}"; \
+	@route="$${ROUTE:-}"; \
+	headed="$${HEADED:-false}"; \
 	extra_args=""; \
 	if [ -n "$$route" ]; then extra_args="$$extra_args --route=$$route"; fi; \
 	if [ "$$headed" = "true" ]; then extra_args="$$extra_args --headed"; fi; \
