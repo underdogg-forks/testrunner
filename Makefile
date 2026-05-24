@@ -54,7 +54,7 @@ generate-routes:
 	npm run routes:generate
 
 auto:
-	@if [ -z "$(ROUTES_JSON)" ]; then echo "❌ ROUTES_JSON is not set. Run 'make export-routes' first, or use 'make shallow' to scan without a route list."; exit 1; fi
+	@if [ -z "$(ROUTES_JSON)" ]; then echo "ROUTES_JSON is not set. Run 'make export-routes' first, or use 'make shallow' to scan without a route list."; exit 1; fi
 	ROUTES_JSON=$(ROUTES_JSON) \
 	APP_URL=$(APP_URL) \
 	LOGIN_PATH=$(LOGIN_PATH) \
@@ -107,7 +107,7 @@ auto-one:
 	npm run auto
 
 scan-todo:
-	@if [ ! -f "todo.json" ]; then echo "❌ todo.json not found. Run 'make auto' or 'make shallow' first."; exit 1; fi
+	@if [ ! -f "todo.json" ]; then echo "todo.json not found. Run 'make auto' or 'make shallow' first."; exit 1; fi
 	ROUTES_JSON=$(ROUTES_JSON) \
 	APP_URL=$(APP_URL) \
 	LOGIN_PATH=$(LOGIN_PATH) \
