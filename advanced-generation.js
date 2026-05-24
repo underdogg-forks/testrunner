@@ -1,10 +1,10 @@
-const { chromium, errors } = require('playwright');
+const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 const { RouteDiscovery } = require('./discover-routes');
 const { convertToPlaywright } = require('./convert-to-playwright');
 
-function createTestRunnerLogger() {
+function createLogger() {
   const dir = path.resolve('storage/logs');
   fs.mkdirSync(dir, { recursive: true });
 
@@ -18,7 +18,7 @@ function createTestRunnerLogger() {
       timestamp: new Date().toISOString(),
       level,
       message,
-      ...(extra ? { extra } : {})
+      extra
     };
 
     fs.appendFileSync(file, JSON.stringify(entry) + '\n');
@@ -27,46 +27,20 @@ function createTestRunnerLogger() {
 
   return {
     file,
-    info: (msg, extra) => write('INFO', msg, extra),
-    warn: (msg, extra) => write('WARN', msg, extra),
-    error: (msg, extra) => write('ERROR', msg, extra),
-    debug: (msg, extra) => write('DEBUG', msg, extra)
+    info: (m, e) => write('INFO', m, e),
+    warn: (m, e) => write('WARN', m, e),
+    error: (m, e) => write('ERROR', m, e)
   };
 }
 
 function normalizeUrl(url) {
   if (!url) return '';
-  const noHash = url.split('#')[0];
-  const noQuery = noHash.split('?')[0];
-
-  return noQuery.endsWith('/') && noQuery.length > 1
-      ? noQuery.slice(0, -1)
-      : noQuery;
+  const clean = url.split('#')[0].split('?')[0];
+  return clean.endsWith('/') && clean.length > 1 ? clean.slice(0, -1) : clean;
 }
 
-function urlIncludes(url, expected) {
-  if (!url || !expected) return false;
-  return String(url).includes(expected);
-}
-
-function toBoolean(value, defaultValue = false) {
-  if (value === undefined || value === null || value === '') return defaultValue;
-  return String(value).toLowerCase() === 'true';
-}
-
-function resolveRouteUrl(baseUrl, routeValue) {
-  if (!routeValue) return '';
-  if (/^https?:\/\//i.test(routeValue)) return normalizeUrl(routeValue);
-
-  const normalizedPath = routeValue.startsWith('/')
-      ? routeValue
-      : `/${routeValue}`;
-
-  return normalizeUrl(`${baseUrl}${normalizedPath}`);
-}
-
-function shouldSkipRoute(url) {
-  const blockedPatterns = [
+function shouldSkip(url) {
+  const blocked = [
     '/logout',
     '/login',
     '/register',
@@ -76,144 +50,62 @@ function shouldSkipRoute(url) {
     '/horizon',
     '/telescope'
   ];
-
-  return blockedPatterns.some((pattern) => url.includes(pattern));
+  return blocked.some((p) => url.includes(p));
 }
 
-function isParameterizedRoute(url) {
+function isParamRoute(url) {
   return url.includes('{') || url.includes('}');
 }
 
-function loadDotEnv(dotEnvPath) {
-  if (!fs.existsSync(dotEnvPath)) return;
+function toBool(v, def = false) {
+  if (v === undefined || v === null || v === '') return def;
+  return String(v).toLowerCase() === 'true';
+}
 
-  const content = fs.readFileSync(dotEnvPath, 'utf8');
-
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-
-    const index = line.indexOf('=');
-    if (index === -1) continue;
-
-    const key = line.slice(0, index).trim();
-    let value = line.slice(index + 1).trim();
-
-    if (!key || process.env[key] !== undefined) continue;
-
-    if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    process.env[key] = value;
-  }
+function resolve(base, route) {
+  if (!route) return '';
+  if (/^https?:\/\//.test(route)) return normalizeUrl(route);
+  return normalizeUrl(`${base}${route.startsWith('/') ? route : `/${route}`}`);
 }
 
 function parseArgs() {
   const args = process.argv.slice(2);
 
-  const getArg = (name) => {
-    const prefix = `--${name}=`;
-    const exact = `--${name}`;
-
-    const index = args.findIndex((a) => a === exact || a.startsWith(prefix));
-    if (index === -1) return '';
-
-    const value = args[index];
-
-    if (value.startsWith(prefix)) return value.slice(prefix.length).trim();
-
-    if (args[index + 1] && !args[index + 1].startsWith('--')) {
-      return args[index + 1].trim();
-    }
-
+  const get = (name) => {
+    const p = `--${name}=`;
+    const i = args.findIndex((a) => a === `--${name}` || a.startsWith(p));
+    if (i === -1) return '';
+    if (args[i].startsWith(p)) return args[i].slice(p.length);
+    if (args[i + 1] && !args[i + 1].startsWith('--')) return args[i + 1];
     return '';
   };
 
-  const hasFlag = (name) => args.includes(`--${name}`);
+  const has = (f) => args.includes(`--${f}`);
 
-  return { getArg, hasFlag };
+  return { get, has };
 }
 
 async function run() {
-  loadDotEnv(path.resolve('.env'));
+  const logger = createLogger();
+  const { get, has } = parseArgs();
 
-  const logger = createTestRunnerLogger();
-  const { getArg, hasFlag } = parseArgs();
+  const baseUrl = (get('baseUrl') || process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const routesFile = get('routes') || process.env.ROUTES_JSON;
 
-  const baseUrl = (
-      getArg('baseUrl') ||
-      process.env.APP_URL ||
-      process.env.BASE_URL ||
-      'http://localhost:3000'
-  ).replace(/\/$/, '');
-
-  const routesFile =
-      getArg('routes') ||
-      process.env.ROUTES_JSON ||
-      process.env.ROUTES_FILE ||
-      '';
-
-  const loginUrl =
-      getArg('loginUrl') ||
-      process.env.LOGIN_PATH ||
-      '/login';
-
-  const dashboardUrl =
-      getArg('dashboardUrl') ||
-      process.env.DASHBOARD_PATH ||
-      '/dashboard';
-
-  const email =
-      getArg('email') ||
-      process.env.E2E_EMAIL ||
-      'a@a.com';
-
-  const password =
-      getArg('password') ||
-      process.env.E2E_PASSWORD ||
-      'demopassword';
-
-  const emailSelector =
-      getArg('emailSelector') ||
-      'input[name="email"], input[id="email"]';
-
-  const passwordSelector =
-      getArg('passwordSelector') ||
-      'input[name="password"], input[id="password"]';
-
-  const submitSelector =
-      getArg('submitSelector') ||
-      'button[type="submit"], input[type="submit"]';
-
-  let headless = (process.env.HEADLESS || 'true') !== 'false';
-
-  if (toBoolean(getArg('headless'), headless)) {
-    headless = true;
-  }
-
-  if (hasFlag('headed') || toBoolean(process.env.HEADED, false)) {
-    headless = false;
-  }
-
-  const singleRouteInput =
-      getArg('singleRoute') ||
-      getArg('route') ||
-      process.env.ROUTE ||
-      process.env.SINGLE_ROUTE ||
-      '';
-
-  const singleRoute = resolveRouteUrl(baseUrl, singleRouteInput);
-
-  const routesFileFinal = routesFile;
-
-  if (!routesFileFinal.trim()) {
-    console.error('❌ Missing ROUTES_JSON / --routes');
+  if (!routesFile) {
+    console.error('Missing ROUTES_JSON / --routes');
     process.exit(1);
   }
+
+  const loginUrl = get('loginUrl') || process.env.LOGIN_PATH || '/login';
+  const dashboardUrl = get('dashboardUrl') || process.env.DASHBOARD_PATH || '/dashboard';
+
+  const email = get('email') || process.env.E2E_EMAIL;
+  const password = get('password') || process.env.E2E_PASSWORD;
+
+  const headless = !has('headed');
+
+  const screenshotOnError = toBool(get('screenshotOnError') || process.env.SCREENSHOT_ON_ERROR, true);
 
   const logDir = path.resolve('storage/logs');
   const recordingsDir = path.resolve('recordings');
@@ -223,207 +115,146 @@ async function run() {
   fs.mkdirSync(recordingsDir, { recursive: true });
   fs.mkdirSync(testsDir, { recursive: true });
 
-  const logFile = path.join(logDir, 'e2e-recording.log');
-  fs.writeFileSync(logFile, '');
-
-  const log = (message, level = 'INFO') => {
-    const line = `[${new Date().toISOString()}] [${level}] ${message}\n`;
-    fs.appendFileSync(logFile, line);
-    console.log(`[${level}] ${message}`);
-  };
-
   const discovery = new RouteDiscovery(baseUrl, {
     loginUrl,
     email,
-    password,
-    emailSelector,
-    passwordSelector,
-    submitSelector
+    password
   });
 
-  const routes = discovery.loadLaravelRoutesFromJson(routesFileFinal);
-  const seeded = routes.map((r) => normalizeUrl(r.url)).filter(Boolean);
+  const routesRaw = discovery.loadLaravelRoutesFromJson(routesFile);
+  const routes = routesRaw.map((r) => normalizeUrl(r.url)).filter(Boolean);
 
-  const routeInventory = new Set(seeded);
-  const matchedRoutes = new Set();
-  const discoveredRoutes = new Set();
+  const phase = {
+    scanned: [],
+    visited: [],
+    skipped: [],
+    failed: [],
+    links: [],
+    startTime: new Date().toISOString()
+  };
 
-  const initialRoutes = singleRoute
-      ? [singleRoute]
-      : Array.from(routeInventory);
-
-  const queue = [...initialRoutes];
-  const visited = new Set();
-
-  const startTime = new Date().toISOString();
   let browser;
-
-  let coveragePercent = 0;
 
   try {
     browser = await chromium.launch({ headless });
+    const context = await browser.newContext({
+      screenshot: screenshotOnError ? 'only-on-failure' : 'off'
+    });
 
-    const context = await browser.newContext();
     const page = await context.newPage();
 
-    const bootstrapUrl =
-        singleRoute || resolveRouteUrl(baseUrl, dashboardUrl);
+    const bootstrap = resolve(baseUrl, dashboardUrl);
 
-    await page.goto(bootstrapUrl, { waitUntil: 'domcontentloaded' });
+    await page.goto(bootstrap, { waitUntil: 'domcontentloaded' });
 
-    if (urlIncludes(page.url(), loginUrl)) {
-      log('Redirected to login, authenticating');
+    if (page.url().includes(loginUrl)) {
+      logger.info('auth required');
 
-      await page.fill(emailSelector, email);
-      await page.fill(passwordSelector, password);
+      await page.fill('input[name="email"]', email);
+      await page.fill('input[name="password"]', password);
 
       await Promise.all([
-        page.waitForURL((url) => !url.toString().includes(loginUrl)),
-        page.click(submitSelector)
+        page.waitForURL((u) => !u.toString().includes(loginUrl)),
+        page.click('button[type="submit"]')
       ]);
-
-      log('Authentication complete');
     }
 
-    await page.goto(bootstrapUrl, { waitUntil: 'domcontentloaded' });
+    await page.goto(bootstrap);
 
-    while (queue.length > 0) {
+    const queue = [...routes];
+    const visited = new Set();
+
+    while (queue.length) {
       const url = queue.shift();
       if (!url || visited.has(url)) continue;
 
       visited.add(url);
-      discoveredRoutes.add(url);
 
-      if (shouldSkipRoute(url) || isParameterizedRoute(url)) {
-        logger.warn('Skipped route', { url });
+      if (shouldSkip(url) || isParamRoute(url)) {
+        phase.skipped.push(url);
         continue;
       }
 
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded' });
 
+        phase.visited.push(url);
+
         const links = await page.evaluate(() =>
             Array.from(document.querySelectorAll('a[href]')).map((a) => a.href)
         );
 
-        for (const link of links) {
-          const normalized = normalizeUrl(link);
+        for (const l of links) {
+          const n = normalizeUrl(l);
 
-          if (!normalized.startsWith(baseUrl)) continue;
-          if (shouldSkipRoute(normalized)) continue;
-          if (isParameterizedRoute(normalized)) continue;
+          if (!n.startsWith(baseUrl)) continue;
+          if (shouldSkip(n) || isParamRoute(n)) continue;
 
-          if (routeInventory.has(normalized)) {
-            matchedRoutes.add(normalized);
-          }
+          if (!visited.has(n)) queue.push(n);
 
-          if (!visited.has(normalized)) {
-            queue.push(normalized);
-          }
+          phase.links.push(n);
         }
-      } catch (error) {
-        logger.error('Route failure', {
-          url,
-          message: error?.message,
-          stack: error?.stack
-        });
+      } catch (e) {
+        logger.error('scan error', { url, message: e.message });
+
+        phase.failed.push({ url, message: e.message });
+
+        if (screenshotOnError) {
+          try {
+            await page.screenshot({
+              path: path.join(logDir, `error-${Date.now()}.png`)
+            });
+          } catch {}
+        }
       }
     }
 
-    const total = routeInventory.size;
-    const matched = matchedRoutes.size;
+    phase.scanned = Array.from(visited);
 
-    coveragePercent =
-        total === 0 ? 0 : Math.round((matched / total) * 10000) / 100;
+    const scanFile = path.join(recordingsDir, `scan-${Date.now()}.json`);
+    fs.writeFileSync(scanFile, JSON.stringify(phase, null, 2));
 
-    const untouchedRoutes = [...routeInventory].filter(
-        (r) => !matchedRoutes.has(r)
-    );
+    logger.info(`scan complete -> ${scanFile}`);
 
-    const extraRoutes = [...discoveredRoutes].filter(
-        (r) => !routeInventory.has(r)
-    );
+    // =========================
+    // PHASE 2: ANALYZE
+    // =========================
 
-    const timestamp = new Date().toISOString().replace(/:/g, '-');
+    const matched = new Set(routes.filter((r) => phase.scanned.includes(r)));
 
-    const recordingFile = path.join(
-        recordingsDir,
-        `session-${timestamp}.json`
-    );
+    const coverage = routes.length
+        ? Math.round((matched.size / routes.length) * 100)
+        : 0;
 
-    const recordingPayload = {
-      metadata: {
-        startTime,
-        endTime: new Date().toISOString(),
-        baseUrl
-      },
-      visited: Array.from(visited),
-      matched: Array.from(matchedRoutes),
-      discovered: Array.from(discoveredRoutes)
-    };
-
-    fs.writeFileSync(recordingFile, JSON.stringify(recordingPayload, null, 2));
-
-    const specOut = path.join(testsDir, `generated-${timestamp}.spec.js`);
-
-    try {
-      convertToPlaywright(recordingFile, specOut);
-    } catch (error) {
-      logger.error('Conversion failure', {
-        message: error?.message,
-        stack: error?.stack
-      });
-    }
-
-    const coverageFile = path.join(logDir, `coverage-${timestamp}.json`);
-
-    fs.writeFileSync(
-        coverageFile,
-        JSON.stringify(
-            {
-              coveragePercent,
-              totalRoutes: total,
-              matchedRoutes: matched,
-              untouchedRoutes,
-              extraRoutes
-            },
-            null,
-            2
-        )
-    );
-
-    const todoFile = path.resolve('todo.txt');
-
-    const todoContent = [
-      '# Route Coverage Summary',
-      '',
-      `Coverage: ${coveragePercent}%`,
+    const todo = [
+      `# Coverage: ${coverage}%`,
       '',
       '# Untouched routes',
+      ...routes.filter((r) => !matched.has(r)).map((r) => `- [ ] ${r}`),
       '',
-      ...(untouchedRoutes.length
-          ? untouchedRoutes.map((r) => `- [ ] ${r}`)
-          : ['All routes covered']),
-      '',
-      '# Extra routes discovered',
-      '',
-      ...(extraRoutes.length
-          ? extraRoutes.map((r) => `- [ ] ${r}`)
-          : ['No extra routes'])
+      '# Failed routes',
+      ...phase.failed.map((f) => `- [ ] ${f.url} (${f.message})`)
     ].join('\n');
 
-    fs.writeFileSync(todoFile, todoContent);
+    fs.writeFileSync('todo.txt', todo);
 
-    log(`Generated: ${specOut}`);
-    log(`Coverage: ${coveragePercent}% (${matched}/${total})`);
+    logger.info(`coverage: ${coverage}%`);
 
-    console.log(`\n📊 Route Coverage: ${coveragePercent}% (${matched}/${total})\n`);
-  } catch (error) {
-    logger.error('Fatal error', {
-      message: error?.message,
-      stack: error?.stack
-    });
+    // =========================
+    // PHASE 3: GENERATE
+    // =========================
 
+    try {
+      const specOut = path.join(testsDir, `generated-${Date.now()}.spec.js`);
+      convertToPlaywright(scanFile, specOut);
+      logger.info(`generated -> ${specOut}`);
+    } catch (e) {
+      logger.error('generation failed (scan preserved)', {
+        message: e.message
+      });
+    }
+  } catch (e) {
+    logger.error('fatal', { message: e.message });
     process.exitCode = 1;
   } finally {
     if (browser) await browser.close();
