@@ -153,6 +153,7 @@ playback:
 
 clear:
 	@echo "Clearing logs and zip artifacts..."
-	@rm -rf storage/logs/*
+	@rm rm -Rf storage/logs/* storage/logs/screenshots/* storage/logs/traces/* recordings/*
+	@rm skipped.json
 	@find . -type f -name "*.zip" -not -path "./node_modules/*" -delete
 	@echo "Done."
