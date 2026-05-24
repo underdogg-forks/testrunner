@@ -9,8 +9,8 @@ function normalizeUrl(url) {
   const noHash = url.split('#')[0];
   const noQuery = noHash.split('?')[0];
   return noQuery.endsWith('/') && !/^https?:\/\/[^/]+\/$/.test(noQuery)
-    ? noQuery.slice(0, -1)
-    : noQuery;
+      ? noQuery.slice(0, -1)
+      : noQuery;
 }
 
 function urlIncludes(url, expected) {
@@ -32,23 +32,23 @@ function resolveRouteUrl(baseUrl, routeValue) {
 
 function selectorFor(elementHandle, fallback = '') {
   return elementHandle
-    .evaluate((el) => {
-      if (el.id) return `#${el.id}`;
-      if (el.name) return `[name="${el.name}"]`;
-      if (el.getAttribute('data-testid')) return `[data-testid="${el.getAttribute('data-testid')}"]`;
-      if (el.className && typeof el.className === 'string') {
-        const className = el.className.trim().split(/\s+/).filter(Boolean).join('.');
-        if (className) return `${el.tagName.toLowerCase()}.${className}`;
-      }
-      return el.tagName.toLowerCase();
-    })
-    .catch(() => fallback || 'unknown');
+      .evaluate((el) => {
+        if (el.id) return `#${el.id}`;
+        if (el.name) return `[name="${el.name}"]`;
+        if (el.getAttribute('data-testid')) return `[data-testid="${el.getAttribute('data-testid')}"]`;
+        if (el.className && typeof el.className === 'string') {
+          const className = el.className.trim().split(/\s+/).filter(Boolean).join('.');
+          if (className) return `${el.tagName.toLowerCase()}.${className}`;
+        }
+        return el.tagName.toLowerCase();
+      })
+      .catch(() => fallback || 'unknown');
 }
 
 function escapeCssAttributeValue(value) {
   return String(value)
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"');
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"');
 }
 
 function escapeCssId(value) {
@@ -66,12 +66,14 @@ function loadDotEnv(dotEnvPath) {
     const key = line.slice(0, equalIndex).trim();
     let value = line.slice(equalIndex + 1).trim();
     if (!key || process.env[key] !== undefined) continue;
+
     if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith('\'') && value.endsWith('\''))
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
     ) {
       value = value.slice(1, -1);
     }
+
     process.env[key] = value;
   }
 }
@@ -80,47 +82,65 @@ async function run() {
   loadDotEnv(path.resolve('.env'));
 
   const args = process.argv.slice(2);
+
   const getArg = (name) => {
     const exact = `--${name}`;
     const prefixed = `--${name}=`;
     const keyIndex = args.findIndex((a) => a === exact || a.startsWith(prefixed));
+
     if (keyIndex === -1) return '';
-    if (args[keyIndex].startsWith(prefixed)) return args[keyIndex].slice(prefixed.length).trim();
-    if (args[keyIndex + 1] && !args[keyIndex + 1].startsWith('--')) return args[keyIndex + 1].trim();
+    if (args[keyIndex].startsWith(prefixed)) {
+      return args[keyIndex].slice(prefixed.length).trim();
+    }
+    if (args[keyIndex + 1] && !args[keyIndex + 1].startsWith('--')) {
+      return args[keyIndex + 1].trim();
+    }
     return '';
   };
+
   const hasFlag = (name) => args.includes(`--${name}`);
 
   const baseUrl = (getArg('baseUrl') || process.env.APP_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
   const routesFile = getArg('routes') || process.env.ROUTES_JSON || process.env.ROUTES_FILE || '';
   const loginUrl = getArg('loginUrl') || process.env.LOGIN_PATH || process.env.LOGIN_URL || '/login';
   const dashboardUrl = getArg('dashboardUrl') || process.env.DASHBOARD_PATH || process.env.DASHBOARD_URL || '/dashboard';
+
   const email = getArg('email') || process.env.E2E_EMAIL || process.env.TEST_EMAIL || 'a@a.com';
   const password = getArg('password') || process.env.E2E_PASSWORD || process.env.TEST_PASSWORD || 'demopassword';
+
   const emailSelector = getArg('emailSelector') || process.env.EMAIL_SELECTOR || 'input[name="email"], input[id="email"]';
   const passwordSelector = getArg('passwordSelector') || process.env.PASSWORD_SELECTOR || 'input[name="password"], input[id="password"]';
   const submitSelector = getArg('submitSelector') || process.env.SUBMIT_SELECTOR || 'button[type="submit"], input[type="submit"]';
+
   let headless = (process.env.HEADLESS || 'true') !== 'false';
   const headlessArg = getArg('headless');
+
   if (headlessArg !== '') {
     headless = toBoolean(headlessArg, true);
   }
+
   if (toBoolean(process.env.HEADED, false) || hasFlag('headed')) {
     headless = false;
   }
+
   const maxLinksPerPage = Number(getArg('maxLinksPerPage') || process.env.MAX_LINKS_PER_PAGE || 250);
-  const singleRouteInput = getArg('route')
-    || getArg('singleRoute')
-    || process.env.SINGLE_ROUTE_PATH
-    || process.env.SINGLE_ROUTE
-    || process.env.ROUTE
-    || '';
+
+  const singleRouteInput =
+      getArg('route') ||
+      getArg('singleRoute') ||
+      process.env.SINGLE_ROUTE_PATH ||
+      process.env.SINGLE_ROUTE ||
+      process.env.ROUTE ||
+      '';
+
   const singleRoute = resolveRouteUrl(baseUrl, singleRouteInput);
   const authProbeUrl = singleRoute || resolveRouteUrl(baseUrl, dashboardUrl) || baseUrl;
+
   const assumeAuthenticated = toBoolean(getArg('assumeAuthenticated') || process.env.ASSUME_AUTHENTICATED, false);
+
   const requireAuthConfirmation = toBoolean(
-    getArg('requireAuthConfirmation') || process.env.REQUIRE_AUTH_CONFIRMATION,
-    true
+      getArg('requireAuthConfirmation') || process.env.REQUIRE_AUTH_CONFIRMATION,
+      true
   );
 
   if (!routesFile.trim()) {
@@ -131,12 +151,14 @@ async function run() {
   const logDir = path.resolve('storage/logs');
   const recordingsDir = path.resolve('recordings');
   const testsDir = path.resolve('tests-playwright');
+
   fs.mkdirSync(logDir, { recursive: true });
   fs.mkdirSync(recordingsDir, { recursive: true });
   fs.mkdirSync(testsDir, { recursive: true });
 
   const logFile = path.join(logDir, 'e2e-recording.log');
   fs.writeFileSync(logFile, '');
+
   const log = (message, level = 'INFO') => {
     const line = `[${new Date().toISOString()}] [${level}] ${message}\n`;
     fs.appendFileSync(logFile, line);
@@ -164,14 +186,17 @@ async function run() {
 
   const generatePerLinkSpec = (touchedRoutes, outputFile) => {
     const literal = (value) => JSON.stringify(String(value));
-    const routeTests = touchedRoutes.map((route) => {
-      return `
+
+    const routeTests = touchedRoutes
+        .map((route) => {
+          return `
   test(${literal(`should load ${route}`)}, async ({ page }) => {
     await login(page);
     await page.goto(${literal(route)}, { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle');
   });`;
-    }).join('\n');
+        })
+        .join('\n');
 
     const spec = `import { test } from '@playwright/test';
 
@@ -202,46 +227,65 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
 
   const recordProblem = (scope, error) => {
     const message = error instanceof Error ? error.message : String(error);
+
     session.problems.push({
       timestamp: new Date().toISOString(),
       scope,
       message
     });
+
     log(`${scope}: ${message}`, 'ERROR');
   };
 
   try {
-    const discovery = new RouteDiscovery(baseUrl, { loginUrl, email, password, emailSelector, passwordSelector, submitSelector });
+    const discovery = new RouteDiscovery(baseUrl, {
+      loginUrl,
+      email,
+      password,
+      emailSelector,
+      passwordSelector,
+      submitSelector
+    });
+
     const routes = discovery.loadLaravelRoutesFromJson(routesFile);
     const seeded = routes.map((r) => normalizeUrl(r.url)).filter(Boolean);
+
     const initialRoutes = singleRoute
-      ? [singleRoute]
-      : Array.from(new Set(seeded));
+        ? [singleRoute]
+        : Array.from(new Set(seeded));
+
     const routeChecklist = new Set(singleRoute ? initialRoutes : seeded);
+
     const touchedRouteChecklist = new Set();
     const touchedAllLinksChecklist = new Set();
     const matchedDiscoveredLinks = new Set();
     const unmatchedDiscoveredLinks = new Set();
     const generationRetryList = [];
+
     const queue = Array.from(new Set(initialRoutes));
     const visited = new Set();
     const queued = new Set(queue);
+
     const allowDiscoveryTraversal = !singleRoute;
 
     log(`Loaded ${queue.length} route(s) from ${routesFile}`);
+
     if (singleRoute) {
       log(`Single-route mode enabled for ${singleRoute}`);
     }
 
     browser = await chromium.launch({ headless });
+
     const context = await browser.newContext();
     const page = await context.newPage();
+
     session.metadata.userAgent = await page.evaluate(() => navigator.userAgent);
     session.metadata.viewport = page.viewportSize();
 
     page.on('request', (request) => {
       const method = request.method();
       if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return;
+
       session.networkRequests.push({
         step,
         timestamp: new Date().toISOString(),
@@ -257,34 +301,23 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
       const request = response.request();
       const method = request.method();
       if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return;
-      const index = session.networkRequests.findIndex((r) => r.url === request.url() && r.method === method && !r.response);
+
+      const index = session.networkRequests.findIndex(
+          (r) => r.url === request.url() && r.method === method && !r.response
+      );
+
       if (index === -1) return;
+
       session.networkRequests[index].response = {
         status: response.status(),
         statusText: response.statusText()
       };
     });
 
-// Login bootstrap through protected route redirect
     if (assumeAuthenticated) {
       log('ASSUME_AUTHENTICATED=true, skipping login confirmation', 'WARN');
     } else {
       try {
-<<<<<<< HEAD
-        await page.goto(authProbeUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        if (urlIncludes(page.url(), loginUrl)) {
-          log(`Authentication required before visiting ${authProbeUrl}`);
-          await page.fill(emailSelector, email);
-          await page.fill(passwordSelector, password);
-          await Promise.all([
-            page.waitForURL((url) => !urlIncludes(url, loginUrl), { timeout: 15000 }),
-            page.click(submitSelector)
-          ]);
-          log(`Authenticated using ${loginUrl}`);
-          await page.goto(authProbeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-        }
-        log(`Reached authenticated route at ${authProbeUrl}`);
-=======
         const bootstrapUrl = singleRoute || `${baseUrl}${dashboardUrl}`;
 
         await page.goto(bootstrapUrl, {
@@ -301,10 +334,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
           await page.fill(passwordSelector, password);
 
           await Promise.all([
-            page.waitForURL(
-                (url) => !url.toString().includes(loginUrl),
-                { timeout: 15000 }
-            ),
+            page.waitForURL((url) => !url.toString().includes(loginUrl), { timeout: 15000 }),
             page.click(submitSelector)
           ]);
 
@@ -317,7 +347,6 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
         });
 
         log(`Reached protected route: ${bootstrapUrl}`);
->>>>>>> bb7e19b (Almost working: auto-login and then scan a single route from a previously generated `routes.json`)
       } catch (error) {
         recordProblem('login', error);
 
@@ -327,10 +356,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
           throw new Error(authError);
         }
 
-        log(
-            `${authError} Continuing because REQUIRE_AUTH_CONFIRMATION=false`,
-            'WARN'
-        );
+        log(`${authError} Continuing because REQUIRE_AUTH_CONFIRMATION=false`, 'WARN');
       }
     }
 
@@ -345,24 +371,31 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
 
       const unique = new Set();
       const internalLinks = [];
+
       for (const entry of urls.slice(0, maxLinksPerPage)) {
         const normalized = normalizeUrl(entry.href);
         if (!normalized || unique.has(normalized)) continue;
         unique.add(normalized);
+
         if (!normalized.startsWith(baseUrl)) continue;
+
         internalLinks.push({ ...entry, href: normalized });
       }
 
       for (const found of internalLinks) {
         const normalized = found.href;
+
         touchedAllLinksChecklist.add(normalized);
+
         if (routeChecklist.has(normalized)) {
           matchedDiscoveredLinks.add(normalized);
         } else {
           unmatchedDiscoveredLinks.add(normalized);
         }
+
         if (!allowDiscoveryTraversal) continue;
         if (!normalized || queued.has(normalized) || visited.has(normalized)) continue;
+
         queued.add(normalized);
         queue.push(normalized);
       }
@@ -372,13 +405,31 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
 
     const fillFormsAndSubmit = async (currentUrl) => {
       const forms = await page.locator('form').all();
+
       for (const form of forms) {
-        const fields = await form.locator('input:not([type="hidden"]):not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled]), select:not([disabled])').all();
+        const fields = await form.locator(`
+          input:not([type="hidden"])
+               :not([type="submit"])
+               :not([type="button"])
+               :not([type="reset"])
+               :not([type="image"])
+               :not([readonly])
+               :not([disabled]),
+          textarea:not([readonly]):not([disabled]),
+          select:not([disabled])
+        `).all();
+
         const submittedData = {};
+
         for (const field of fields) {
           const fieldType = ((await field.getAttribute('type')) || '').toLowerCase();
           const tagName = ((await field.evaluate((el) => el.tagName)) || '').toLowerCase();
-          const name = (await field.getAttribute('name')) || (await field.getAttribute('id')) || '';
+
+          const name =
+              (await field.getAttribute('name')) ||
+              (await field.getAttribute('id')) ||
+              '';
+
           const selector = await selectorFor(field, name ? `[name="${name}"]` : tagName);
 
           try {
@@ -388,6 +439,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
                 const opt = Array.from(select.options).find((o) => !o.disabled && o.value !== '');
                 return opt ? opt.value : '';
               });
+
               if (optionValue) {
                 await field.selectOption(optionValue);
                 submittedData[name || selector] = optionValue;
@@ -408,6 +460,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
                 if (fieldType === 'url') return 'https://example.test';
                 return `Dummy ${name || 'value'} ${Date.now()}`;
               })();
+
               await field.fill(dummyValue);
               submittedData[name || selector] = dummyValue;
             }
@@ -420,6 +473,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
               type: fieldType || tagName,
               value: submittedData[name || selector] ?? ''
             });
+
             step += 1;
           } catch (error) {
             recordProblem(`form-field:${currentUrl}`, error);
@@ -438,10 +492,12 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
             url: currentUrl,
             pathname: new URL(currentUrl).pathname
           });
+
           step += 1;
 
           try {
             const submitButton = form.locator('button[type="submit"], input[type="submit"]').first();
+
             if (await submitButton.count()) {
               await Promise.race([
                 page.waitForLoadState('networkidle', { timeout: 5000 }),
@@ -458,11 +514,14 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     while (queue.length > 0) {
       const url = queue.shift();
       if (!url || visited.has(url)) continue;
+
       visited.add(url);
 
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+
         const currentUrl = normalizeUrl(page.url());
+
         const routePath = (() => {
           try {
             return new URL(currentUrl).pathname;
@@ -478,19 +537,23 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
           to: currentUrl,
           path: routePath
         });
+
         step += 1;
 
         if (routeChecklist.has(currentUrl)) {
           touchedRouteChecklist.add(currentUrl);
         }
+
         touchedAllLinksChecklist.add(currentUrl);
 
         await fillFormsAndSubmit(currentUrl);
 
         const discoveredLinks = await collectInternalLinks();
+
         for (const link of discoveredLinks) {
           const safeHref = escapeCssAttributeValue(link.href);
           const safeId = escapeCssId(link.id);
+
           session.clicks.push({
             step,
             timestamp: new Date().toISOString(),
@@ -501,9 +564,9 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
             url: currentUrl,
             pathname: routePath
           });
+
           step += 1;
         }
-
       } catch (error) {
         if (!(error instanceof errors.TimeoutError)) {
           recordProblem(`navigate:${url}`, error);
@@ -514,6 +577,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     }
 
     const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+
     session.metadata.endTime = new Date().toISOString();
     session.metadata.duration = Date.now() - new Date(session.metadata.startTime).getTime();
     session.metadata.visitedRoutes = session.routes.length;
@@ -529,6 +593,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     log(`Saved recording to ${recordingFile}`);
 
     const outputFile = path.join(testsDir, `advanced-generated-${timestamp}.spec.js`);
+
     try {
       convertToPlaywright(recordingFile, outputFile);
       log(`Generated Playwright test at ${outputFile}`);
@@ -539,6 +604,7 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
 
     const perLinkOutputFile = path.join(testsDir, `advanced-generated-per-link-${timestamp}.spec.js`);
     const touchedLinks = Array.from(touchedAllLinksChecklist);
+
     try {
       generatePerLinkSpec(touchedLinks, perLinkOutputFile);
       log(`Generated one-test-per-link Playwright spec at ${perLinkOutputFile}`);
@@ -549,37 +615,43 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
 
     const untouchedRoutes = Array.from(routeChecklist).filter((route) => !touchedRouteChecklist.has(route));
     const unmatchedLinks = Array.from(unmatchedDiscoveredLinks).sort();
+
     const unmatchedLogFile = path.join(logDir, 'unmatched-links.log');
+
     fs.writeFileSync(
-      unmatchedLogFile,
-      unmatchedLinks.length
-        ? `${unmatchedLinks.join('\n')}\n`
-        : 'No unmatched internal links were discovered.\n'
+        unmatchedLogFile,
+        unmatchedLinks.length
+            ? `${unmatchedLinks.join('\n')}\n`
+            : 'No unmatched internal links were discovered.\n'
     );
+
     log(`Wrote unmatched links to ${unmatchedLogFile}`);
+
     const todoFile = path.resolve('todo.txt');
+
     const todoContent = [
       '# Untouched routes from routes.json',
       '',
       ...(untouchedRoutes.length
-        ? untouchedRoutes.map((route) => `- [ ] ${route}`)
-        : ['All routes from routes.json were touched.']),
+          ? untouchedRoutes.map((route) => `- [ ] ${route}`)
+          : ['All routes from routes.json were touched.']),
       '',
       '# Unmatched discovered links',
       '',
       ...(unmatchedLinks.length
-        ? unmatchedLinks.map((link) => `- [ ] ${link}`)
-        : ['No unmatched internal links were discovered.']),
+          ? unmatchedLinks.map((link) => `- [ ] ${link}`)
+          : ['No unmatched internal links were discovered.']),
       '',
       '# Generation retry items',
       '',
       ...(generationRetryList.length
-        ? generationRetryList.map((item) => `- [ ] ${item}`)
-        : ['No generation retries needed.'])
+          ? generationRetryList.map((item) => `- [ ] ${item}`)
+          : ['No generation retries needed.'])
     ].join('\n');
-    fs.writeFileSync(todoFile, todoContent);
-    log(`Wrote untouched-route checklist to ${todoFile}`);
 
+    fs.writeFileSync(todoFile, todoContent);
+
+    log(`Wrote untouched-route checklist to ${todoFile}`);
     log(`Finished with ${session.problems.length} problem(s). See ${logFile}`);
   } catch (error) {
     recordProblem('fatal', error);
