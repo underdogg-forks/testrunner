@@ -61,6 +61,18 @@ function readFlag(get, has, key, envKey, fallback) {
   return boolFrom(process.env[envKey], fallback);
 }
 
+function resolveStopOnFailRoute(get, has) {
+  if (has('stop-on-fail-route')) {
+    return readFlag(get, has, 'stop-on-fail-route', 'STOP_ON_FAIL_ROUTE', false);
+  }
+
+  if (has('stop-on-failure')) {
+    return readFlag(get, has, 'stop-on-failure', 'STOP_ON_FAILURE', false);
+  }
+
+  return boolFrom(process.env.STOP_ON_FAIL_ROUTE, false) || boolFrom(process.env.STOP_ON_FAILURE, false);
+}
+
 function normalizeUrl(url) {
   if (!url) return '';
   const clean = String(url).split('#')[0].split('?')[0];
@@ -362,11 +374,7 @@ async function run() {
 
   const headless = readFlag(get, has, 'headless', 'HEADLESS', true);
   const stopOnError = readFlag(get, has, 'stop-on-error', 'STOP_ON_ERROR', false);
-  const stopOnFailRoute = has('stop-on-fail-route')
-    ? readFlag(get, has, 'stop-on-fail-route', 'STOP_ON_FAIL_ROUTE', false)
-    : has('stop-on-failure')
-      ? readFlag(get, has, 'stop-on-failure', 'STOP_ON_FAILURE', false)
-      : boolFrom(process.env.STOP_ON_FAIL_ROUTE, false) || boolFrom(process.env.STOP_ON_FAILURE, false);
+  const stopOnFailRoute = resolveStopOnFailRoute(get, has);
   const screenshotOnError = readFlag(get, has, 'screenshot-on-error', 'SCREENSHOT_ON_ERROR', true);
   const traceEnabled = readFlag(get, has, 'trace', 'TRACE', !!process.env.CI);
   const assumeAuthenticated = readFlag(get, has, 'assume-authenticated', 'ASSUME_AUTHENTICATED', false);
