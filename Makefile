@@ -35,12 +35,18 @@ auto: ## Run automatic flow. Optional: ROUTE=/dashboard HEADED=true
 	if [ "$$headed" = "true" ]; then extra_args="$$extra_args --headed"; fi; \
 	npm run generate:playwright:auto -- $$extra_args
 
+<<<<<<< HEAD
 auto-one: ## Run headed automatic flow for one route (ROUTE=/dashboard). Set ASSUME_AUTHENTICATED=true to skip login confirmation.
 	@test -n "$(ROUTE)" || (echo "Usage: make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true] [HEADED=true]" && exit 1)
 	@headed="$${HEADED:-true}"; \
 	extra_args="--singleRoute $(ROUTE)"; \
 	if [ "$$headed" = "true" ]; then extra_args="$$extra_args --headed"; fi; \
 	ASSUME_AUTHENTICATED=$${ASSUME_AUTHENTICATED:-false} npm run generate:playwright:auto -- $$extra_args
+=======
+auto-one: ## Run automatic flow for one route (ROUTE=/dashboard)
+	@test -n "$(ROUTE)" || (echo "Usage: make auto-one ROUTE=/dashboard" && exit 1)
+	HEADLESS=false ASSUME_AUTHENTICATED=false npm run generate:playwright:auto -- --singleRoute "$(ROUTE)"
+>>>>>>> bb7e19b (Almost working: auto-login and then scan a single route from a previously generated `routes.json`)
 
 test: ## Run all Playwright tests
 	npx playwright test

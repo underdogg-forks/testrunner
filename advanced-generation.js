@@ -265,11 +265,12 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
       };
     });
 
-    // Login once before route traversal
+// Login bootstrap through protected route redirect
     if (assumeAuthenticated) {
       log('ASSUME_AUTHENTICATED=true, skipping login confirmation', 'WARN');
     } else {
       try {
+<<<<<<< HEAD
         await page.goto(authProbeUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
         if (urlIncludes(page.url(), loginUrl)) {
           log(`Authentication required before visiting ${authProbeUrl}`);
@@ -283,11 +284,53 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
           await page.goto(authProbeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
         }
         log(`Reached authenticated route at ${authProbeUrl}`);
+=======
+        const bootstrapUrl = singleRoute || `${baseUrl}${dashboardUrl}`;
+
+        await page.goto(bootstrapUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 20000
+        });
+
+        const currentUrl = normalizeUrl(page.url());
+
+        if (currentUrl.includes(loginUrl)) {
+          log(`Redirected to login at ${currentUrl}`);
+
+          await page.fill(emailSelector, email);
+          await page.fill(passwordSelector, password);
+
+          await Promise.all([
+            page.waitForURL(
+                (url) => !url.toString().includes(loginUrl),
+                { timeout: 15000 }
+            ),
+            page.click(submitSelector)
+          ]);
+
+          log('Authentication successful');
+        }
+
+        await page.goto(bootstrapUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 15000
+        });
+
+        log(`Reached protected route: ${bootstrapUrl}`);
+>>>>>>> bb7e19b (Almost working: auto-login and then scan a single route from a previously generated `routes.json`)
       } catch (error) {
         recordProblem('login', error);
+
         const authError = 'Cannot continue without confirmed authenticated state.';
-        if (requireAuthConfirmation) throw new Error(authError);
-        log(`${authError} Continuing because REQUIRE_AUTH_CONFIRMATION=false`, 'WARN');
+
+        if (requireAuthConfirmation) {
+          throw new Error(authError);
+        }
+
+        log(
+            `${authError} Continuing because REQUIRE_AUTH_CONFIRMATION=false`,
+            'WARN'
+        );
       }
     }
 
