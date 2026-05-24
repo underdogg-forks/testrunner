@@ -422,6 +422,13 @@ async function run() {
   const dashboardUrl = get('dashboardUrl') || process.env.DASHBOARD_PATH || '/dashboard';
   const email = get('email') || process.env.E2E_EMAIL || '';
   const password = get('password') || process.env.E2E_PASSWORD || '';
+  const shallow = readFlag(get, has, 'shallow', 'SHALLOW', false);
+
+  const routeParams = (() => {
+    const raw = get('route-params') || process.env.ROUTE_PARAMS || '';
+    if (!raw) return {};
+    try { return JSON.parse(raw); } catch { return {}; }
+  })();
 
   const headless = readFlag(get, has, 'headless', 'HEADLESS', true);
   const stopOnError = readFlag(get, has, 'stop-on-error', 'STOP_ON_ERROR', false);
@@ -434,13 +441,15 @@ async function run() {
   ensureDir(LOG_DIR);
   const log = createLogger(path.join(LOG_DIR, 'testrunner.log'));
 
-  const mode = routeOverride
-    ? 'single-route'
-    : todoFile
-      ? 'todo-routes'
-      : routesFile
-        ? 'inventory-routes'
-        : 'seed-only';
+  const mode = shallow
+    ? 'shallow'
+    : routeOverride
+      ? 'single-route'
+      : todoFile
+        ? 'todo-routes'
+        : routesFile
+          ? 'inventory-routes'
+          : 'seed-only';
 
   const config = {
     mode,
@@ -471,9 +480,15 @@ async function run() {
   const discovery = new RouteDiscovery(baseUrl, { loginUrl, email, password });
 
   let inventoryRoutes = [];
-  if (routesFile) {
+  if (routesFile && !shallow) {
     try {
-      inventoryRoutes = discovery.loadLaravelRoutesFromJson(routesFile).map(route => normalizeUrl(route.url));
+      inventoryRoutes = discovery.loadLaravelRoutesFromJson(routesFile).map(route => {
+        let url = normalizeUrl(route.url);
+        for (const [param, value] of Object.entries(routeParams)) {
+          url = url.replace(new RegExp(`\\{${param}\\}`, 'g'), String(value));
+        }
+        return url;
+      });
       log('INFO', `loaded route inventory (${inventoryRoutes.length}) from ${routesFile}`);
     } catch (error) {
       log('WARN', `failed loading inventory (${routesFile}); continuing with dynamic scan`, { message: error.message });
@@ -780,8 +795,16 @@ async function run() {
 
   log('INFO', 'scan summary', runModel.summary);
   log('INFO', `report -> ${outputs.reportFile}`);
-  log('INFO', `todo -> ${outputs.todoFile}`);
+  log('INFO', `scan   -> ${outputs.scanSessionFile}`);
+  log('INFO', `spec   -> ${outputs.generatedSpecFile}`);
+  log('INFO', `todo   -> ${outputs.todoFile}`);
   log('INFO', `skipped -> ${skippedRoutesFile}`);
+
+  console.log('\nNext steps:');
+  console.log(`  Run tests:          make test`);
+  console.log(`  Resume unfinished:  make scan-todo`);
+  console.log(`  View report:        ${outputs.latestReportFile}`);
+  console.log(`  Generated spec:     ${outputs.generatedSpecFile}\n`);
 
   if (runModel.summary.errored > 0 && (stopOnFailRoute || stopOnError)) {
     process.exitCode = 1;
