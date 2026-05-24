@@ -11,6 +11,7 @@ help: ## Show all commands
 	@echo "  3) create .env with APP_URL, ROUTES_JSON, LOGIN_PATH, DASHBOARD_PATH, E2E_EMAIL, E2E_PASSWORD"
 	@echo "  4) make auto"
 	@echo "  5) make auto-one ROUTE=/dashboard ASSUME_AUTHENTICATED=true  # single-route TDD run"
+	@echo "     Optional for auto: ROUTE=/dashboard HEADED=true"
 	@echo
 	@echo "Commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sed -E 's/:.*?## / - /'
@@ -26,8 +27,13 @@ export-routes: ## Print Laravel route export command
 generate-routes: ## Generate Playwright specs directly from routes.json
 	npm run generate:playwright:routes
 
-auto: ## Run automatic login + traversal + form fill + per-link Playwright generation (fails if auth is not confirmed)
-	npm run generate:playwright:auto
+auto: ## Run automatic flow. Optional: ROUTE=/dashboard HEADED=true
+	@route="$${ROUTE:-$${route:-}}"; \
+	headed="$${HEADED:-$${headed:-false}}"; \
+	extra_args=""; \
+	if [ -n "$$route" ]; then extra_args="$$extra_args --route=$$route"; fi; \
+	if [ "$$headed" = "true" ]; then extra_args="$$extra_args --headed"; fi; \
+	npm run generate:playwright:auto -- $$extra_args
 
 auto-one: ## Run automatic flow for one route (ROUTE=/dashboard). Set ASSUME_AUTHENTICATED=true to skip login confirmation.
 	@test -n "$(ROUTE)" || (echo "Usage: make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true]" && exit 1)
