@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help install export-routes routes generate-routes auto auto-one test test-one discover record convert-playwright convert-phpunit playback
+.PHONY: help install export-routes routes generate-routes auto auto-one scan-todo test test-one discover record convert-playwright convert-phpunit playback
 
 ENV_FILE ?= .env
 
@@ -15,8 +15,15 @@ help:
 	@echo "  make export-routes"
 	@echo "  make auto"
 	@echo "  make auto-one ROUTE=/dashboard"
+	@echo "  make scan-todo"
 	@echo "  make test"
 	@echo "  make test-one ROUTE=/dashboard"
+	@echo
+	@echo "Flags (set to true/false):"
+	@echo "  STOP_ON_ERROR=true"
+	@echo "  STOP_ON_FAIL_ROUTE=true (alias: STOP_ON_FAILURE=true)"
+	@echo "  SCREENSHOT_ON_ERROR=true"
+	@echo "  TRACE=true"
 	@echo
 
 install:
@@ -42,6 +49,11 @@ auto:
 	HEADLESS=$(HEADLESS) \
 	ASSUME_AUTHENTICATED=$(ASSUME_AUTHENTICATED) \
 	REQUIRE_AUTH_CONFIRMATION=$(REQUIRE_AUTH_CONFIRMATION) \
+	STOP_ON_ERROR=$(STOP_ON_ERROR) \
+	STOP_ON_FAIL_ROUTE=$(STOP_ON_FAIL_ROUTE) \
+	STOP_ON_FAILURE=$(STOP_ON_FAILURE) \
+	SCREENSHOT_ON_ERROR=$(SCREENSHOT_ON_ERROR) \
+	TRACE=$(TRACE) \
 	npm run auto
 
 auto-one:
@@ -52,7 +64,30 @@ auto-one:
 	HEADLESS=false \
 	HEADED=$(HEADED) \
 	ASSUME_AUTHENTICATED=$(ASSUME_AUTHENTICATED) \
+	STOP_ON_ERROR=$(STOP_ON_ERROR) \
+	STOP_ON_FAIL_ROUTE=$(STOP_ON_FAIL_ROUTE) \
+	STOP_ON_FAILURE=$(STOP_ON_FAILURE) \
+	SCREENSHOT_ON_ERROR=$(SCREENSHOT_ON_ERROR) \
+	TRACE=$(TRACE) \
 	npm run auto
+
+scan-todo:
+	@if [ ! -f "todo.json" ]; then echo "❌ todo.json not found. Run make auto first."; exit 1; fi
+	ROUTES_JSON=$(ROUTES_JSON) \
+	APP_URL=$(APP_URL) \
+	LOGIN_PATH=$(LOGIN_PATH) \
+	DASHBOARD_PATH=$(DASHBOARD_PATH) \
+	E2E_EMAIL=$(E2E_EMAIL) \
+	E2E_PASSWORD=$(E2E_PASSWORD) \
+	HEADLESS=$(HEADLESS) \
+	ASSUME_AUTHENTICATED=$(ASSUME_AUTHENTICATED) \
+	REQUIRE_AUTH_CONFIRMATION=$(REQUIRE_AUTH_CONFIRMATION) \
+	STOP_ON_ERROR=$(STOP_ON_ERROR) \
+	STOP_ON_FAIL_ROUTE=$(STOP_ON_FAIL_ROUTE) \
+	STOP_ON_FAILURE=$(STOP_ON_FAILURE) \
+	SCREENSHOT_ON_ERROR=$(SCREENSHOT_ON_ERROR) \
+	TRACE=$(TRACE) \
+	npm run auto -- --todo=todo.json
 
 test:
 	npx playwright test
