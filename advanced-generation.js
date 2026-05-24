@@ -90,7 +90,7 @@ function toAbsoluteUrl(baseUrl, value) {
 
 function shouldSkipRoute(url) {
   const skipPatterns = [
-    '/documents', '/dropbox-token', '/googledrive-token', '/integrations/create', '/leads/all-leads-data', '/logout', '/register', '/password', '/storage/', '/horizon', '/telescope',
+    '/documents', '/dropbox-token', '/broadcasting', '/googledrive-token', '/integrations/create', '/leads/all-leads-data', '/logout', '/register', '/password', '/storage/', '/horizon', '/telescope',
     '/livewire', '/_debugbar', '/_ignition', '/sanctum/csrf-cookie'
   ];
   return skipPatterns.some(pattern => url.includes(pattern));
