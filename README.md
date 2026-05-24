@@ -96,7 +96,7 @@ When it finishes you will see output like:
 ```
 [INFO] scan summary { scanned: 42, errored: 2, skipped: 5 }
 [INFO] report   -> storage/logs/run-report.json
-[INFO] scan     -> recordings/scan-2025-01-01T12-00-00.json
+[INFO] session  -> recordings/scan-2025-01-01T12-00-00.json
 [INFO] spec     -> tests-playwright/generated-2025-01-01T12-00-00.spec.js
 ```
 
