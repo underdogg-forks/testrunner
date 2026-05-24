@@ -2,6 +2,9 @@
   "name": "route-discovery",
   "version": "1.0.0",
   "scripts": {
+    "auto": "node advanced-generation.js",
+    "test": "playwright test",
+    "test:one": "playwright test --grep \"$ROUTE\"",
     "record": "node advanced-recording.js",
     "playback": "node playback.js",
     "convert:phpunit": "node convert-to-phpunit.js",

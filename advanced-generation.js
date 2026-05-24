@@ -13,6 +13,18 @@ function normalizeUrl(url) {
     : noQuery;
 }
 
+function toBoolean(value, defaultValue = false) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  return String(value).toLowerCase() === 'true';
+}
+
+function resolveRouteUrl(baseUrl, routeValue) {
+  if (!routeValue) return '';
+  if (/^https?:\/\//i.test(routeValue)) return normalizeUrl(routeValue);
+  const normalizedPath = routeValue.startsWith('/') ? routeValue : `/${routeValue}`;
+  return normalizeUrl(`${baseUrl}${normalizedPath}`);
+}
+
 function selectorFor(elementHandle, fallback = '') {
   return elementHandle
     .evaluate((el) => {
@@ -84,6 +96,13 @@ async function run() {
   const submitSelector = getArg('submitSelector') || process.env.SUBMIT_SELECTOR || 'button[type="submit"], input[type="submit"]';
   const headless = (process.env.HEADLESS || 'true') !== 'false';
   const maxLinksPerPage = Number(getArg('maxLinksPerPage') || process.env.MAX_LINKS_PER_PAGE || 250);
+  const singleRouteInput = getArg('singleRoute') || process.env.SINGLE_ROUTE_PATH || process.env.SINGLE_ROUTE || '';
+  const singleRoute = resolveRouteUrl(baseUrl, singleRouteInput);
+  const assumeAuthenticated = toBoolean(getArg('assumeAuthenticated') || process.env.ASSUME_AUTHENTICATED, false);
+  const requireAuthConfirmation = toBoolean(
+    getArg('requireAuthConfirmation') || process.env.REQUIRE_AUTH_CONFIRMATION,
+    true
+  );
 
   if (!routesFile.trim()) {
     console.error('❌ Error: Provide routes inventory using ROUTES_JSON, ROUTES_FILE, or --routes.');
@@ -176,17 +195,23 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     const discovery = new RouteDiscovery(baseUrl, { loginUrl, email, password, emailSelector, passwordSelector, submitSelector });
     const routes = discovery.loadLaravelRoutesFromJson(routesFile);
     const seeded = routes.map((r) => normalizeUrl(r.url)).filter(Boolean);
-    const routeChecklist = new Set(seeded);
+    const initialRoutes = singleRoute
+      ? [singleRoute]
+      : Array.from(new Set(seeded));
+    const routeChecklist = new Set(singleRoute ? initialRoutes : seeded);
     const touchedRouteChecklist = new Set();
     const touchedAllLinksChecklist = new Set();
     const matchedDiscoveredLinks = new Set();
     const unmatchedDiscoveredLinks = new Set();
     const generationRetryList = [];
-    const queue = Array.from(new Set(seeded));
+    const queue = Array.from(new Set(initialRoutes));
     const visited = new Set();
     const queued = new Set(queue);
 
-    log(`Loaded ${queue.length} routes from ${routesFile}`);
+    log(`Loaded ${queue.length} route(s) from ${routesFile}`);
+    if (singleRoute) {
+      log(`Single-route mode enabled for ${singleRoute}`);
+    }
 
     browser = await chromium.launch({ headless });
     const context = await browser.newContext();
@@ -221,21 +246,27 @@ test.describe('Advanced generated - one test per touched route', () => {${routeT
     });
 
     // Login once before route traversal
-    try {
-      await page.goto(`${baseUrl}${loginUrl}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.fill(emailSelector, email);
-      await page.fill(passwordSelector, password);
-      await Promise.all([
-        page.waitForURL((url) => !url.includes(loginUrl), { timeout: 15000 }),
-        page.click(submitSelector)
-      ]);
-      log(`Authenticated using ${loginUrl}`);
-      await page.goto(`${baseUrl}${dashboardUrl}`, { waitUntil: 'domcontentloaded', timeout: 15000 })
-        .then(() => log(`Reached dashboard at ${dashboardUrl}`))
-        .catch((error) => log(`Could not reach dashboard (${dashboardUrl}): ${error.message}`, 'WARN'));
-    } catch (error) {
-      recordProblem('login', error);
-      log('Continuing without confirmed authenticated state');
+    if (assumeAuthenticated) {
+      log('ASSUME_AUTHENTICATED=true, skipping login confirmation', 'WARN');
+    } else {
+      try {
+        await page.goto(`${baseUrl}${loginUrl}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page.fill(emailSelector, email);
+        await page.fill(passwordSelector, password);
+        await Promise.all([
+          page.waitForURL((url) => !url.includes(loginUrl), { timeout: 15000 }),
+          page.click(submitSelector)
+        ]);
+        log(`Authenticated using ${loginUrl}`);
+        await page.goto(`${baseUrl}${dashboardUrl}`, { waitUntil: 'domcontentloaded', timeout: 15000 })
+          .then(() => log(`Reached dashboard at ${dashboardUrl}`))
+          .catch((error) => log(`Could not reach dashboard (${dashboardUrl}): ${error.message}`, 'WARN'));
+      } catch (error) {
+        recordProblem('login', error);
+        const authError = 'Cannot continue without confirmed authenticated state.';
+        if (requireAuthConfirmation) throw new Error(authError);
+        log(`${authError} Continuing because REQUIRE_AUTH_CONFIRMATION=false`, 'WARN');
+      }
     }
 
     const collectInternalLinks = async () => {

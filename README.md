@@ -40,6 +40,27 @@ make auto
 ```
 
 This logs in, traverses links, fills forms with dummy values, generates Playwright tests, and writes untouched routes to `todo.txt`.
+If login is not confirmed, the run now fails fast with: `Cannot continue without confirmed authenticated state.`
+
+## Single-route run (`/dashboard`)
+
+Use this when you want one route only:
+
+```bash
+make auto-one ROUTE=/dashboard
+```
+
+If you explicitly want a test-driven run without login confirmation:
+
+```bash
+make auto-one ROUTE=/dashboard ASSUME_AUTHENTICATED=true
+```
+
+Equivalent Yarn command:
+
+```bash
+ASSUME_AUTHENTICATED=true yarn auto --singleRoute /dashboard
+```
 
 ## Recommended Laravel workflow
 
@@ -61,6 +82,12 @@ Run:
 
 ```bash
 npm run generate:playwright:auto
+```
+
+Or with Yarn:
+
+```bash
+yarn auto
 ```
 
 What it does:
@@ -127,7 +154,10 @@ Use `make help` to list commands:
 - `make install`
 - `make export-routes`
 - `make generate-routes`
-- `make auto`
+- `make auto` (requires confirmed authentication)
+- `make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true]`
+- `make test`
+- `make test-one ROUTE=/dashboard`
 - `make discover`
 - `make record`
 - `make convert-playwright RECORDING=recordings/session-<timestamp>.json`
@@ -146,6 +176,9 @@ Common variables:
 - `E2E_PASSWORD` (`TEST_PASSWORD` alias)
 - `HEADLESS` (`true`/`false`)
 - `MAX_LINKS_PER_PAGE` (default: `250`)
+- `SINGLE_ROUTE_PATH` or `SINGLE_ROUTE` (example: `/dashboard`)
+- `ASSUME_AUTHENTICATED` (`true`/`false`, default: `false`)
+- `REQUIRE_AUTH_CONFIRMATION` (`true`/`false`, default: `true`)
 
 The script loads variables from `.env` automatically if the file exists.
 
@@ -155,3 +188,11 @@ Manual recorder variables:
 - `MAX_DURATION`
 - `RECORD_NETWORK`
 - `CAPTURE_SCREENSHOTS`
+
+## Which command should I run?
+
+After `yarn install`:
+
+- Generate automatically: `yarn auto`
+- Run all tests: `yarn test`
+- Run one route test from generated specs: `ROUTE=/dashboard yarn test:one`

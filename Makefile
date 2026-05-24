@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help install export-routes generate-routes auto discover record convert-playwright convert-phpunit playback
+.PHONY: help install export-routes generate-routes auto auto-one test test-one discover record convert-playwright convert-phpunit playback
 
 help: ## Show all commands
 	@echo "Playwright Route Runner"
@@ -10,6 +10,7 @@ help: ## Show all commands
 	@echo "  2) php artisan route:list --json > routes.json"
 	@echo "  3) create .env with APP_URL, ROUTES_JSON, LOGIN_PATH, DASHBOARD_PATH, E2E_EMAIL, E2E_PASSWORD"
 	@echo "  4) make auto"
+	@echo "  5) make auto-one ROUTE=/dashboard ASSUME_AUTHENTICATED=true  # single-route TDD run"
 	@echo
 	@echo "Commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sed -E 's/:.*?## / - /'
@@ -25,8 +26,19 @@ export-routes: ## Print Laravel route export command
 generate-routes: ## Generate Playwright specs directly from routes.json
 	npm run generate:playwright:routes
 
-auto: ## Run automatic login + traversal + form fill + per-link Playwright generation
+auto: ## Run automatic login + traversal + form fill + per-link Playwright generation (fails if auth is not confirmed)
 	npm run generate:playwright:auto
+
+auto-one: ## Run automatic flow for one route (ROUTE=/dashboard). Set ASSUME_AUTHENTICATED=true to skip login confirmation.
+	@test -n "$(ROUTE)" || (echo "Usage: make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true]" && exit 1)
+	ASSUME_AUTHENTICATED=$${ASSUME_AUTHENTICATED:-false} npm run generate:playwright:auto -- --singleRoute "$(ROUTE)"
+
+test: ## Run all Playwright tests
+	npx playwright test
+
+test-one: ## Run one Playwright test by grep pattern (ROUTE=/dashboard)
+	@test -n "$(ROUTE)" || (echo "Usage: make test-one ROUTE=/dashboard" && exit 1)
+	npx playwright test --grep "$(ROUTE)"
 
 discover: ## Run discovery workflow (inventory-backed or crawler fallback)
 	npm run discover
