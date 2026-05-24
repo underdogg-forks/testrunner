@@ -235,8 +235,7 @@ async function captureFailureArtifacts({ page, context, routeUrl, config, traceC
     traceChunkOpen.value = false;
   }
 
-  const forceScreenshot = !config.traceEnabled && !config.screenshotOnError;
-  if (config.screenshotOnError || forceScreenshot) {
+  if (config.screenshotOnError) {
     const screenshotPath = path.join(LOG_DIR, 'screenshots', `${artifactBase}.png`);
     ensureDir(path.dirname(screenshotPath));
     try {
