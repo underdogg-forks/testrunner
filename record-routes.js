@@ -76,7 +76,7 @@ const path = require('path');
   log('Recording started');
 
   // Navigate to starting URL
-  await page.goto('https://your-website.com'); // Change this!
+  await page.goto(process.env.APP_URL || process.env.START_URL || 'http://localhost:3000');
 
   // Keep browser open and wait for manual closure
   await page.waitForTimeout(300000); // 5 minutes, adjust as needed

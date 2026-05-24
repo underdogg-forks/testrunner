@@ -9,6 +9,7 @@
 
     "auto": "node advanced-generation.js",
     "auto:single": "node advanced-generation.js",
+    "shallow": "node advanced-generation.js --shallow",
 
     "discover": "node discover-routes.js",
 

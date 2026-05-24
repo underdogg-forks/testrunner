@@ -37,7 +37,7 @@ const path = require('path');
   
   const config = {
     // Starting URL for the recording session
-    startUrl: process.env.START_URL || 'http://localhost:3000',
+    startUrl: process.env.START_URL || process.env.APP_URL || 'http://localhost:3000',
     
     // Maximum recording duration in milliseconds (5 minutes default)
     maxDuration: parseInt(process.env.MAX_DURATION) || 300000,

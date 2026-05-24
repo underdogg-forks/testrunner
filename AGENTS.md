@@ -1,0 +1,116 @@
+# Agent Guidelines
+
+This file describes the project for AI coding agents (GitHub Copilot, Cursor, Junie, etc.).
+
+---
+
+## What this project does
+
+This is a **Node.js CLI toolchain** that:
+
+1. Authenticates against a Laravel web application using Playwright
+2. Visits every route in the app (from `routes.json` or by following links)
+3. Records what it finds — status codes, discovered links, errors
+4. Generates Playwright `.spec.js` test files automatically
+5. Produces JSON reports for further analysis
+
+It is not a test framework. It is a **scanner and test generator** that runs against a live Laravel app.
+
+---
+
+## Repository structure
+
+```
+advanced-generation.js       Main scanner — authenticated crawl, report, spec generation
+advanced-recording.js        Manual session recorder (open browser, click around, save JSON)
+convert-to-playwright.js     Converts a recording JSON → Playwright spec file
+convert-to-phpunit.js        Converts a recording JSON → PHPUnit feature test
+discover-routes.js           RouteDiscovery class — crawl, grouping, spec templates
+discover-phpunit.js          Variant of RouteDiscovery that generates PHPUnit tests
+generate-playwright-from-routes.js  Routes JSON → Playwright specs (no browser needed)
+playback.js                  Replays a recorded session in a browser
+record-routes.js             Legacy minimal click recorder (not used by make targets)
+utils.js                     Shared helpers: sortRoutes, buildTimeline, escape helpers
+Makefile                     All user-facing commands
+package.json                 npm scripts
+.env.example                 All supported environment variables with descriptions
+README.md                    User documentation (written for non-technical readers)
+IMPLEMENTATION.md            Technical documentation for developers
+```
+
+---
+
+## Key environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `APP_URL` | Yes | Base URL of the target app |
+| `LOGIN_PATH` | Yes | Login page path |
+| `DASHBOARD_PATH` | Yes | Dashboard path (scan starting point) |
+| `E2E_EMAIL` | Yes | Test user email |
+| `E2E_PASSWORD` | Yes | Test user password |
+| `ROUTES_JSON` | No | Path to `php artisan route:list --json` output |
+| `SKIPPED_JSON` | No | Persisted skip list (`skipped.json` by default) |
+| `ROUTE_PARAMS` | No | JSON map of URL param substitutions (single-quote in `.env`) |
+| `HEADLESS` | No | `true` (default) or `false` |
+| `STOP_ON_ERROR` | No | Abort on any error |
+| `STOP_ON_FAIL_ROUTE` | No | Abort after first failing route |
+| `SCREENSHOT_ON_ERROR` | No | Capture screenshot on route error (default `true`) |
+| `TRACE` | No | Enable Playwright tracing (default `true` in CI) |
+
+---
+
+## Script execution order
+
+```
+make install           # 1 — always run first, once
+make export-routes     # 2 — optional, generates routes.json
+make auto              # 3 — main scan (or: make shallow)
+make scan-todo         # 4 — optional, resume interrupted scan
+make test              # 5 — run generated Playwright tests
+```
+
+---
+
+## Code conventions
+
+- CommonJS modules (`require` / `module.exports`) throughout — do not use ES module syntax (`import`/`export`) in `.js` files
+- The Makefile is the public interface; npm scripts are internal
+- All file paths are constructed with `path.join` / `path.resolve`
+- Directories are created with `fs.mkdirSync(dir, { recursive: true })` before writing
+- Log lines follow `[ISO_TIMESTAMP] [LEVEL] message {extra_json}` format
+- The `runModel` object in `advanced-generation.js` is the canonical scan result; it is written to `storage/logs/run-report.json` at the end of every run regardless of errors
+
+---
+
+## Important behaviours
+
+- Routes matching `shouldSkipRoute()` patterns are excluded (logout, livewire internals, etc.)
+- Routes with URL parameters (`{id}`, `{external_id}`, etc.) are skipped **unless** `ROUTE_PARAMS` is set
+- Errored routes are added to `skipped.json` and excluded from future runs automatically
+- The scan always produces output files even if every route errored
+- `make shallow` runs without `ROUTES_JSON` — it discovers routes by following links from the dashboard
+
+---
+
+## Output files
+
+| File | Description |
+|---|---|
+| `storage/logs/run-report.json` | Latest scan report |
+| `storage/logs/run-report-<ts>.json` | Timestamped copy |
+| `recordings/scan-<ts>.json` | Session JSON (input for `convert-to-playwright.js`) |
+| `tests-playwright/generated-<ts>.spec.js` | Auto-generated Playwright spec |
+| `todo.json` | Routes not yet scanned |
+| `skipped.json` | Persisted skipped routes |
+| `todo.txt` | Human-readable todo list |
+
+---
+
+## When modifying this project
+
+- Run `npm install` after any `package.json` change
+- The project has no build step — changes to `.js` files take effect immediately
+- Test your changes with `make auto-one ROUTE=/dashboard HEADED=true` against a real app
+- The `test-results/` directory is gitignored; it is created by Playwright at test time
+- Do not introduce new dependencies without a clear reason — the project intentionally has minimal deps
