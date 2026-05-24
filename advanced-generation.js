@@ -547,6 +547,10 @@ async function run() {
         const response = await page.goto(routeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         const status = response ? response.status() : null;
 
+        if (status !== null && status >= 400) {
+          throw new Error(`HTTP ${status} while scanning ${routeUrl}`);
+        }
+
         scannedSet.add(routeUrl);
         discoveredSet.add(routeUrl);
 
