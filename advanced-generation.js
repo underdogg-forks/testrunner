@@ -794,10 +794,10 @@ async function run() {
   const outputs = writeRunOutputs(runModel, log);
 
   log('INFO', 'scan summary', runModel.summary);
-  log('INFO', `report -> ${outputs.reportFile}`);
-  log('INFO', `scan   -> ${outputs.scanSessionFile}`);
-  log('INFO', `spec   -> ${outputs.generatedSpecFile}`);
-  log('INFO', `todo   -> ${outputs.todoFile}`);
+  log('INFO', `report  -> ${outputs.latestReportFile}`);
+  log('INFO', `session -> ${outputs.scanSessionFile}`);
+  log('INFO', `spec    -> ${outputs.generatedSpecFile}`);
+  log('INFO', `todo    -> ${outputs.todoFile}`);
   log('INFO', `skipped -> ${skippedRoutesFile}`);
 
   console.log('\nNext steps:');
