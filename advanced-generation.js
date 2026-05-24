@@ -424,12 +424,6 @@ async function run() {
   const password = get('password') || process.env.E2E_PASSWORD || '';
   const shallow = readFlag(get, has, 'shallow', 'SHALLOW', false);
 
-  const routeParams = (() => {
-    const raw = get('route-params') || process.env.ROUTE_PARAMS || '';
-    if (!raw) return {};
-    try { return JSON.parse(raw); } catch { return {}; }
-  })();
-
   const headless = readFlag(get, has, 'headless', 'HEADLESS', true);
   const stopOnError = readFlag(get, has, 'stop-on-error', 'STOP_ON_ERROR', false);
   const stopOnFailRoute = resolveStopOnFailRoute(get, has);
@@ -440,6 +434,26 @@ async function run() {
 
   ensureDir(LOG_DIR);
   const log = createLogger(path.join(LOG_DIR, 'testrunner.log'));
+  const routeParamsRaw = get('route-params') || process.env.ROUTE_PARAMS || '';
+  const routeParams = (() => {
+    if (!routeParamsRaw) return {};
+    const trimmed = routeParamsRaw.trim();
+    const unwrapped = (
+      (trimmed.startsWith("'") && trimmed.endsWith("'"))
+      || (trimmed.startsWith('"') && trimmed.endsWith('"'))
+    )
+      ? trimmed.slice(1, -1)
+      : trimmed;
+    try {
+      const parsed = JSON.parse(unwrapped);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      log('WARN', 'ROUTE_PARAMS must be a JSON object; continuing without substitutions');
+      return {};
+    } catch (error) {
+      log('WARN', 'failed parsing ROUTE_PARAMS; continuing without substitutions', { message: error.message });
+      return {};
+    }
+  })();
 
   const mode = shallow
     ? 'shallow'
