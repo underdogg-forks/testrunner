@@ -1,65 +1,117 @@
-# Implementation summary
+# Implementation Overview
 
-## Main route-inventory workflows
+## System Purpose
 
-### 1) Direct Playwright generation from Laravel routes
+This toolchain provides:
+
+- Laravel route inventory → Playwright generation
+- Authenticated crawler-based traversal
+- Form interaction simulation
+- Network + navigation recording
+- Automated test generation (Playwright + optional PHPUnit conversion)
+
+---
+
+## Core Workflows
+
+### 1. Route Inventory Generation (Deterministic)
+
+Uses Laravel route export as the source of truth.
 
 ```bash
 php artisan route:list --json > routes.json
 APP_URL=http://localhost:8000 ROUTES_JSON=routes.json npm run generate:playwright:routes
-```
 
-This generates module-based Playwright specs from known routes.
+Output:
 
-### 2) Automatic login-aware traversal and generation
+Route-based Playwright specs
+2. Automatic Authenticated Traversal (Dynamic)
 
-```bash
-npm run generate:playwright:auto
-```
+Runs a browser session that:
 
-This workflow:
+authenticates via login flow
+starts from dashboard or a single route
+discovers internal links
+fills and submits forms with synthetic data
+records navigation + interactions
+generates test artifacts
 
-- logs in (default `/login`),
-- fails fast if authentication is not confirmed (unless explicitly overridden),
-- moves to dashboard (default `/dashboard`),
-- follows discovered internal links,
-- fills forms with dummy values and attempts submission,
-- records route/link/form/network activity,
-- generates Playwright output from the resulting recording,
-- generates a one-test-per-touched-link Playwright spec file (matched and unmatched internal links),
-- writes error details to `storage/logs/e2e-recording.log`,
-- writes unmatched discovered links to `storage/logs/unmatched-links.log`,
-- writes `todo.txt` with untouched route checklist plus generation retry items.
+Run:
 
-## Current scripts
+make auto
 
-1. `npm run record` (manual recording)
-2. `npm run convert:playwright <recording.json>`
-3. `npm run convert:phpunit <recording.json>`
-4. `npm run playback <recording.json>`
-5. `npm run discover` (crawler fallback or inventory-backed discovery)
-6. `npm run generate:playwright:routes` (inventory-only generation)
-7. `npm run generate:playwright:auto` (automatic traversal + generation)
-8. `npm run generate:playwright:auto -- --singleRoute /dashboard` (single-route traversal)
-9. `npx playwright test --grep /dashboard` (run one route-focused test)
+Single route:
 
-## Makefile entrypoints
+make auto-one ROUTE=/dashboard
+Outputs
 
-For easier usage, the repository includes a `Makefile`:
+Each run generates:
 
-1. `make install`
-2. `make export-routes`
-3. `make auto` (recommended first run for automatic generation)
-4. `make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true]`
-5. `make test`
-6. `make test-one ROUTE=/dashboard`
-7. `make generate-routes`
-8. `make discover`
-9. `make record`
-10. `make convert-playwright RECORDING=...`
-11. `make convert-phpunit RECORDING=...`
-12. `make playback RECORDING=...`
+recordings/e2e-session-*.json
+tests-playwright/advanced-generated-*.spec.js
+tests-playwright/advanced-generated-per-link-*.spec.js
+storage/logs/e2e-recording.log
+storage/logs/unmatched-links.log
+todo.txt
+Script Roles
+Script	Purpose
+record	manual interaction capture
+convert:playwright	recording → Playwright
+convert:phpunit	recording → PHPUnit
+playback	replay recorded session
+discover	fallback crawler-based discovery
+generate:playwright:routes	inventory-based generation
+generate:playwright:auto	full authenticated crawler
+Execution Modes
+Full mode
+make auto
+login required
+full traversal
+form submission enabled
+link discovery enabled
+Single-route mode
+make auto-one ROUTE=/dashboard
+isolated execution
+safer for debugging
+no global crawl required
+Configuration
 
-## Fallback mode
+Required:
 
-If route inventory is not available, `npm run discover` remains available for crawler-based route inference.
+APP_URL
+ROUTES_JSON
+LOGIN_PATH
+DASHBOARD_PATH
+E2E_EMAIL
+E2E_PASSWORD
+
+Optional:
+
+HEADLESS (default true)
+HEADED (overrides HEADLESS)
+ASSUME_AUTHENTICATED
+REQUIRE_AUTH_CONFIRMATION
+MAX_LINKS_PER_PAGE
+Make Targets
+make install
+make setup
+make routes
+make auto
+make auto-one ROUTE=/dashboard
+make test
+make test-one ROUTE=/dashboard
+make record
+make discover
+make convert-playwright RECORDING=...
+make convert-phpunit RECORDING=...
+make playback RECORDING=...
+Recommended Flow
+make install
+make routes
+make auto
+Debug Flow
+make auto-one ROUTE=/dashboard HEADED=true
+Safety Notes
+logout/login routes are excluded automatically
+parameterized routes are ignored
+internal framework routes are excluded

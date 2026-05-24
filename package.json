@@ -2,16 +2,25 @@
   "name": "route-discovery",
   "version": "1.0.0",
   "scripts": {
+    "install:deps": "npm install && npx playwright install chromium",
+
+    "routes:export": "php artisan route:list --json > routes.json",
+    "routes:generate": "node generate-playwright-from-routes.js",
+
     "auto": "node advanced-generation.js",
-    "test": "playwright test",
-    "test:one": "playwright test --grep \"$ROUTE\"",
-    "record": "node advanced-recording.js",
-    "playback": "node playback.js",
-    "convert:phpunit": "node convert-to-phpunit.js",
-    "convert:playwright": "node convert-to-playwright.js",
+    "auto:single": "node advanced-generation.js --singleRoute",
+
     "discover": "node discover-routes.js",
-    "generate:playwright:routes": "node generate-playwright-from-routes.js",
-    "generate:playwright:auto": "node advanced-generation.js"
+
+    "record": "node advanced-recording.js",
+
+    "convert:playwright": "node convert-to-playwright.js",
+    "convert:phpunit": "node convert-to-phpunit.js",
+
+    "playback": "node playback.js",
+
+    "test": "npx playwright test",
+    "test:one": "npx playwright test --grep"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",

@@ -1,68 +1,74 @@
 SHELL := /bin/bash
 
-.PHONY: help install export-routes generate-routes auto auto-one test test-one discover record convert-playwright convert-phpunit playback
+.DEFAULT_GOAL := help
 
-help: ## Show all commands
-	@echo "Playwright Route Runner"
-	@echo
-	@echo "Quick start (automatic, no manual clicking):"
-	@echo "  1) make install"
-	@echo "  2) php artisan route:list --json > routes.json"
-	@echo "  3) create .env with APP_URL, ROUTES_JSON, LOGIN_PATH, DASHBOARD_PATH, E2E_EMAIL, E2E_PASSWORD"
-	@echo "  4) make auto"
-	@echo "  5) make auto-one ROUTE=/dashboard  # headed single-route run with login"
-	@echo "     Optional for auto: ROUTE=/dashboard HEADED=true"
-	@echo
-	@echo "Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sed -E 's/:.*?## / - /'
+.PHONY: help install setup test test-one auto auto-one routes generate-routes discover record convert-playwright convert-phpunit playback clean doctor
 
-install: ## Install dependencies and Playwright Chromium
+APP_ENV ?= .env
+
+help: ## Show available commands
+	@echo "Playwright E2E Tooling"
+	@echo ""
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
+
+install: ## Install dependencies and Playwright browsers
 	npm install
 	npx playwright install chromium
 
-export-routes: ## Print Laravel route export command
-	@echo "Run in your Laravel app root:"
-	@echo "php artisan route:list --json > routes.json"
+setup: install ## Full initial setup (install + browser deps)
+	@echo "Setup complete"
 
-generate-routes: ## Generate Playwright specs directly from routes.json
+routes: ## Export Laravel routes to routes.json
+	php artisan route:list --json > routes.json
+
+generate-routes: ## Generate Playwright specs from routes.json
 	npm run generate:playwright:routes
 
-auto: ## Run automatic flow. Optional: ROUTE=/dashboard HEADED=true
+auto: ## Run full automatic traversal (optional: ROUTE=/dashboard HEADED=true)
 	@route="$${ROUTE:-}"; \
 	headed="$${HEADED:-false}"; \
-	extra_args=""; \
-	if [ -n "$$route" ]; then extra_args="$$extra_args --route=$$route"; fi; \
-	if [ "$$headed" = "true" ]; then extra_args="$$extra_args --headed"; fi; \
-	npm run generate:playwright:auto -- $$extra_args
+	args=""; \
+	[ -n "$$route" ] && args="$$args --route=$$route"; \
+	[ "$$headed" = "true" ] && args="$$args --headed"; \
+	npm run generate:playwright:auto -- $$args
 
-auto-one: ## Run headed automatic flow for one route (ROUTE=/dashboard). Set ASSUME_AUTHENTICATED=true to skip login confirmation.
-	@test -n "$(ROUTE)" || (echo "Usage: make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true] [HEADED=true]" && exit 1)
+auto-one: ## Run single-route traversal (ROUTE required, optional HEADED=true)
+	@test -n "$(ROUTE)" || (echo "Missing ROUTE. Example: make auto-one ROUTE=/dashboard" && exit 1)
 	@headed="$${HEADED:-true}"; \
-	extra_args="--singleRoute $(ROUTE)"; \
-	if [ "$$headed" = "true" ]; then extra_args="$$extra_args --headed"; fi; \
-	ASSUME_AUTHENTICATED=$${ASSUME_AUTHENTICATED:-false} npm run generate:playwright:auto -- $$extra_args
+	args="--singleRoute $(ROUTE)"; \
+	[ "$$headed" = "true" ] && args="$$args --headed"; \
+	ASSUME_AUTHENTICATED=$${ASSUME_AUTHENTICATED:-false} npm run generate:playwright:auto -- $$args
 
-test: ## Run all Playwright tests
+test: ## Run full Playwright test suite
 	npx playwright test
 
-test-one: ## Run one Playwright test by grep pattern (ROUTE=/dashboard)
-	@test -n "$(ROUTE)" || (echo "Usage: make test-one ROUTE=/dashboard" && exit 1)
+test-one: ## Run a single test (ROUTE=/dashboard)
+	@test -n "$(ROUTE)" || (echo "Missing ROUTE. Example: make test-one ROUTE=/dashboard" && exit 1)
 	npx playwright test --grep "$(ROUTE)"
 
-discover: ## Run discovery workflow (inventory-backed or crawler fallback)
+discover: ## Run route discovery workflow
 	npm run discover
 
-record: ## Manual browser interaction recording
+record: ## Start manual recording session
 	npm run record
 
-convert-playwright: ## Convert a manual recording to Playwright (set RECORDING=recordings/session-<timestamp>.json)
-	@test -n "$(RECORDING)" || (echo "Usage: make convert-playwright RECORDING=recordings/session-<timestamp>.json" && exit 1)
+convert-playwright: ## Convert recording to Playwright (RECORDING required)
+	@test -n "$(RECORDING)" || (echo "Missing RECORDING. Example: make convert-playwright RECORDING=recordings/session.json" && exit 1)
 	npm run convert:playwright $(RECORDING)
 
-convert-phpunit: ## Convert a manual recording to PHPUnit (set RECORDING=recordings/session-<timestamp>.json)
-	@test -n "$(RECORDING)" || (echo "Usage: make convert-phpunit RECORDING=recordings/session-<timestamp>.json" && exit 1)
+convert-phpunit: ## Convert recording to PHPUnit (RECORDING required)
+	@test -n "$(RECORDING)" || (echo "Missing RECORDING. Example: make convert-phpunit RECORDING=recordings/session.json" && exit 1)
 	npm run convert:phpunit $(RECORDING)
 
-playback: ## Replay a manual recording (set RECORDING=recordings/session-<timestamp>.json)
-	@test -n "$(RECORDING)" || (echo "Usage: make playback RECORDING=recordings/session-<timestamp>.json" && exit 1)
+playback: ## Replay a recorded session (RECORDING required)
+	@test -n "$(RECORDING)" || (echo "Missing RECORDING. Example: make playback RECORDING=recordings/session.json" && exit 1)
 	npm run playback $(RECORDING)
+
+clean: ## Clean generated artifacts
+	rm -rf recordings tests-playwright storage/logs/*.log todo.txt
+
+doctor: ## Validate environment and dependencies
+	@node -v >/dev/null 2>&1 || (echo "Node.js missing" && exit 1)
+	@npx playwright --version >/dev/null 2>&1 || (echo "Playwright missing" && exit 1)
+	@test -f routes.json || echo "Warning: routes.json missing"
+	@test -f .env || echo "Warning: .env missing"
