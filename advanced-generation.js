@@ -290,7 +290,7 @@ function writeRunOutputs(runModel, log) {
   const latestReportFile = path.join(LOG_DIR, 'run-report.json');
   const todoFile = path.join(process.cwd(), 'todo.json');
 
-  const todoRoutes = sortRoutes([
+  const todoRoutes = dedupeUrls([
     ...runModel.nonScannedRoutes.map(r => r.url),
     ...runModel.erroredRoutes.map(r => r.url),
   ]);
@@ -362,9 +362,11 @@ async function run() {
 
   const headless = readFlag(get, has, 'headless', 'HEADLESS', true);
   const stopOnError = readFlag(get, has, 'stop-on-error', 'STOP_ON_ERROR', false);
-  const stopOnFailRoute = has('stop-on-failure')
-    ? readFlag(get, has, 'stop-on-failure', 'STOP_ON_FAILURE', false)
-    : readFlag(get, has, 'stop-on-fail-route', 'STOP_ON_FAIL_ROUTE', false);
+  const stopOnFailRoute = has('stop-on-fail-route')
+    ? readFlag(get, has, 'stop-on-fail-route', 'STOP_ON_FAIL_ROUTE', false)
+    : has('stop-on-failure')
+      ? readFlag(get, has, 'stop-on-failure', 'STOP_ON_FAILURE', false)
+      : boolFrom(process.env.STOP_ON_FAIL_ROUTE, false) || boolFrom(process.env.STOP_ON_FAILURE, false);
   const screenshotOnError = readFlag(get, has, 'screenshot-on-error', 'SCREENSHOT_ON_ERROR', true);
   const traceEnabled = readFlag(get, has, 'trace', 'TRACE', !!process.env.CI);
   const assumeAuthenticated = readFlag(get, has, 'assume-authenticated', 'ASSUME_AUTHENTICATED', false);
@@ -648,7 +650,6 @@ async function run() {
   const completed = new Set([
     ...runModel.scannedRoutes.map(route => normalizeUrl(route.url)),
     ...runModel.skippedRoutes.map(route => normalizeUrl(route.url)),
-    ...runModel.erroredRoutes.map(route => normalizeUrl(route.url)),
   ]);
 
   const nonScanned = inventoryRoutes

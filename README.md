@@ -6,6 +6,7 @@ This repository scans a target PHP/Laravel app (configured via `.env`), generate
 
 ```bash
 make install
+make routes
 make auto
 ```
 
