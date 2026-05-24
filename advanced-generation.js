@@ -394,13 +394,20 @@ function writeRunOutputs(runModel, log) {
       splitByPhenomenon: true,
       phenomenonOutputDir: TESTS_DIR,
     });
-    generatedSpecFiles = Array.isArray(generated) && generated.length > 0 ? generated : generatedSpecFiles;
+    generatedSpecFiles = Array.isArray(generated) ? generated : [];
     log('INFO', `generated playwright specs -> ${generatedSpecFiles.length} file(s) in ${TESTS_DIR}`);
   } catch (error) {
     log('ERROR', 'playwright generation failed (scan report preserved)', { message: error.message });
   }
 
-  return { reportFile, latestReportFile, todoFile, scanSessionFile, generatedSpecFile, generatedSpecFiles };
+  return {
+    reportFile,
+    latestReportFile,
+    todoFile,
+    scanSessionFile,
+    generatedSpecFile: generatedSpecFiles[0] || generatedSpecFile,
+    generatedSpecFiles,
+  };
 }
 
 function dedupeUrls(urls) {
