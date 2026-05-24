@@ -154,6 +154,53 @@ function extractTodoRoutes(todoData, baseUrl) {
   return sortRoutes([...unique]);
 }
 
+function extractSkippedRoutes(skippedData, baseUrl) {
+  if (!skippedData) return [];
+
+  const candidates = [];
+
+  if (Array.isArray(skippedData)) {
+    candidates.push(...skippedData);
+  }
+
+  if (Array.isArray(skippedData.routes)) {
+    candidates.push(...skippedData.routes);
+  }
+
+  if (Array.isArray(skippedData.skippedRoutes)) {
+    candidates.push(...skippedData.skippedRoutes);
+  }
+
+  if (Array.isArray(skippedData.erroredRoutes)) {
+    candidates.push(...skippedData.erroredRoutes.map(item => item.url || item));
+  }
+
+  const unique = new Set();
+  for (const route of candidates) {
+    const routeUrl = typeof route === 'string' ? route : route?.url;
+    const absolute = toAbsoluteUrl(baseUrl, routeUrl);
+    if (absolute) unique.add(absolute);
+  }
+
+  return sortRoutes([...unique]);
+}
+
+function writeSkippedRoutesFile(skippedFile, routes, log) {
+  const absolute = path.isAbsolute(skippedFile) ? skippedFile : path.resolve(process.cwd(), skippedFile);
+  const dedupedRoutes = sortRoutes([
+    ...new Set(routes.map(normalizeUrl).filter(Boolean)),
+  ]);
+
+  ensureDir(path.dirname(absolute));
+  fs.writeFileSync(absolute, JSON.stringify({
+    updatedAt: new Date().toISOString(),
+    routes: dedupedRoutes,
+  }, null, 2));
+
+  log('INFO', `skipped routes -> ${absolute} (${dedupedRoutes.length})`);
+  return absolute;
+}
+
 function createRunModel(config) {
   return {
     metadata: {
@@ -162,6 +209,7 @@ function createRunModel(config) {
       baseUrl: config.baseUrl,
       routesFile: config.routesFile || null,
       todoFile: config.todoFile || null,
+      skippedFile: config.skippedFile || null,
       ci: !!process.env.CI,
       flags: {
         stopOnError: config.stopOnError,
@@ -369,6 +417,7 @@ async function run() {
   const routesFile = get('routes') || process.env.ROUTES_JSON || '';
   const routeOverride = get('route') || process.env.ROUTE || '';
   const todoFile = get('todo') || process.env.TODO_JSON || '';
+  const skippedFile = get('skipped') || process.env.SKIPPED_JSON || 'skipped.json';
   const loginUrl = get('loginUrl') || process.env.LOGIN_PATH || '/login';
   const dashboardUrl = get('dashboardUrl') || process.env.DASHBOARD_PATH || '/dashboard';
   const email = get('email') || process.env.E2E_EMAIL || '';
@@ -399,6 +448,7 @@ async function run() {
     routesFile,
     routeOverride,
     todoFile,
+    skippedFile,
     loginUrl,
     dashboardUrl,
     email,
@@ -463,6 +513,28 @@ async function run() {
     }
   }
 
+  let persistedSkippedRoutes = [];
+  if (skippedFile) {
+    try {
+      const skippedData = readJsonIfExists(skippedFile);
+      persistedSkippedRoutes = extractSkippedRoutes(skippedData, baseUrl);
+      log('INFO', `loaded skipped routes (${persistedSkippedRoutes.length}) from ${skippedFile}`);
+    } catch (error) {
+      log('WARN', `failed reading skipped file (${skippedFile})`, { message: error.message });
+      if (stopOnError) {
+        abortRun = true;
+        runModel.erroredRoutes.push({
+          url: skippedFile,
+          source: 'skipped',
+          message: error.message,
+          reason: 'skipped_file_error',
+          artifacts: [],
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
   const absoluteRouteOverride = toAbsoluteUrl(baseUrl, routeOverride);
   const dashboardSeed = toAbsoluteUrl(baseUrl, dashboardUrl) || `${baseUrl}/`;
 
@@ -472,7 +544,7 @@ async function run() {
   } else if (todoRoutes.length > 0) {
     seedRoutes = [...todoRoutes];
   } else if (inventoryRoutes.length > 0) {
-    seedRoutes = [...inventoryRoutes];
+    seedRoutes = [dashboardSeed, ...inventoryRoutes, `${baseUrl}/`];
   } else {
     seedRoutes = [dashboardSeed, `${baseUrl}/`];
   }
@@ -485,9 +557,16 @@ async function run() {
   const queue = seedRoutes.map(url => ({ url, source: 'seed' }));
   const queuedSet = new Set(seedRoutes);
   const scannedSet = new Set();
-  const skippedSet = new Set();
+  const skippedSet = new Set(persistedSkippedRoutes);
+  const persistedSkippedSet = new Set(persistedSkippedRoutes);
   const erroredSet = new Set();
   const discoveredSet = new Set();
+  runModel.skippedRoutes.push(...persistedSkippedRoutes.map(url => ({
+    url,
+    reason: 'persisted_skip',
+    source: 'skipped_file',
+    timestamp: new Date().toISOString(),
+  })));
 
   if (!abortRun) {
     const browser = await chromium.launch({ headless });
@@ -499,7 +578,7 @@ async function run() {
     }
 
     try {
-      const bootstrap = seedRoutes[0] || dashboardSeed;
+      const bootstrap = seedRoutes.find(url => !skippedSet.has(url)) || dashboardSeed;
       log('INFO', `bootstrapping -> ${bootstrap}`);
 
       await page.goto(bootstrap, { waitUntil: 'domcontentloaded' });
@@ -572,6 +651,10 @@ async function run() {
             continue;
           }
 
+          if (skippedSet.has(normalized)) {
+            continue;
+          }
+
           if (!queuedSet.has(normalized) && !scannedSet.has(normalized)) {
             queuedSet.add(normalized);
             queue.push({ url: normalized, source: 'discovered' });
@@ -594,6 +677,7 @@ async function run() {
         }
       } catch (error) {
         erroredSet.add(routeUrl);
+        persistedSkippedSet.add(routeUrl);
         const artifacts = await captureFailureArtifacts({
           page,
           context,
@@ -690,12 +774,14 @@ async function run() {
 
   runModel.metadata.endedAt = new Date().toISOString();
   runModel.metadata.durationMs = Date.now() - new Date(runModel.metadata.startedAt).getTime();
+  const skippedRoutesFile = writeSkippedRoutesFile(skippedFile, [...persistedSkippedSet], log);
 
   const outputs = writeRunOutputs(runModel, log);
 
   log('INFO', 'scan summary', runModel.summary);
   log('INFO', `report -> ${outputs.reportFile}`);
   log('INFO', `todo -> ${outputs.todoFile}`);
+  log('INFO', `skipped -> ${skippedRoutesFile}`);
 
   if (runModel.summary.errored > 0 && (stopOnFailRoute || stopOnError)) {
     process.exitCode = 1;

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help install export-routes routes generate-routes auto auto-one scan-todo test test-one discover record convert-playwright convert-phpunit playback
+.PHONY: help install export-routes routes generate-routes auto auto-one scan-todo test test-one discover record convert-playwright convert-phpunit playback clear
 
 ENV_FILE ?= .env
 
@@ -16,6 +16,7 @@ help:
 	@echo "  make auto"
 	@echo "  make auto-one ROUTE=/dashboard"
 	@echo "  make scan-todo"
+	@echo "  make clear"
 	@echo "  make test"
 	@echo "  make test-one ROUTE=/dashboard"
 	@echo
@@ -54,6 +55,7 @@ auto:
 	STOP_ON_FAILURE=$(STOP_ON_FAILURE) \
 	SCREENSHOT_ON_ERROR=$(SCREENSHOT_ON_ERROR) \
 	TRACE=$(TRACE) \
+	SKIPPED_JSON=$(SKIPPED_JSON) \
 	npm run auto
 
 auto-one:
@@ -69,6 +71,7 @@ auto-one:
 	STOP_ON_FAILURE=$(STOP_ON_FAILURE) \
 	SCREENSHOT_ON_ERROR=$(SCREENSHOT_ON_ERROR) \
 	TRACE=$(TRACE) \
+	SKIPPED_JSON=$(SKIPPED_JSON) \
 	npm run auto
 
 scan-todo:
@@ -87,6 +90,7 @@ scan-todo:
 	STOP_ON_FAILURE=$(STOP_ON_FAILURE) \
 	SCREENSHOT_ON_ERROR=$(SCREENSHOT_ON_ERROR) \
 	TRACE=$(TRACE) \
+	SKIPPED_JSON=$(SKIPPED_JSON) \
 	npm run auto -- --todo=todo.json
 
 test:
@@ -113,3 +117,9 @@ convert-phpunit:
 playback:
 	@test -n "$(RECORDING)" || (echo "Usage: make playback RECORDING=..." && exit 1)
 	npm run playback $(RECORDING)
+
+clear:
+	@echo "Clearing logs and zip artifacts..."
+	@rm -rf storage/logs/*
+	@find . -type f -name "*.zip" -not -path "./node_modules/*" -delete
+	@echo "Done."

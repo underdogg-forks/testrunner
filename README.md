@@ -45,6 +45,7 @@ make routes
 make auto
 make auto-one ROUTE=/dashboard
 make scan-todo
+make clear
 make test
 ```
 
@@ -57,6 +58,9 @@ make auto
 ```
 
 Scans route inventory when available, discovers links, generates Playwright output, and writes unified reporting.
+
+Before scanning from `DASHBOARD_PATH`, the runner loads `skipped.json` (or `SKIPPED_JSON`) and skips those routes globally.
+When a route errors, it is added to `skipped.json` so future runs skip it automatically.
 
 ### 2) Single-route scan (with discovery expansion)
 
@@ -87,10 +91,19 @@ Uses `todo.json` (`nonScannedRoutes` + `erroredRoutes`) to continue unfinished c
 - `storage/logs/run-report.json` (latest)
 - `storage/logs/run-report-<timestamp>.json` (historical)
 - `todo.json` (next-pass input for `make scan-todo`)
+- `skipped.json` (persisted skipped/error routes for next runs)
 - `todo.txt` (human-readable backlog)
 - `recordings/scan-<timestamp>.json`
 - `tests-playwright/generated-<timestamp>.spec.js`
 - `storage/logs/screenshots/*` and/or `storage/logs/traces/*` for failures
+
+## Cleanup
+
+```bash
+make clear
+```
+
+Clears recorded logs and `.zip` trace artifacts.
 
 ## Report classification
 
