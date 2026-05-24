@@ -295,11 +295,11 @@ function generateRouteStep(event, step) {
  */
 function generateClickStep(event, step) {
   const comment = event.text ? `Click "${event.text}"` : `Click ${event.tagName}`;
-  const selector = event.selector ? `page.locator('${escapeSelector(event.selector)}').first()` : null;
-  const textLocator = event.text ? `page.getByText('${escapeValue(event.text)}').first()` : null;
-  const element = selector || textLocator;
-  const clickAction = element
-    ? `const element = ${element};
+  const selectorLocatorCode = event.selector ? `page.locator('${escapeSelector(event.selector)}').first()` : null;
+  const textLocatorCode = event.text ? `page.getByText('${escapeValue(event.text)}').first()` : null;
+  const chosenLocatorCode = selectorLocatorCode || textLocatorCode;
+  const clickAction = chosenLocatorCode
+    ? `const element = ${chosenLocatorCode};
       await element.waitFor({ state: 'visible', timeout: 10000 });
       await element.click();`
     : `// No selector or text captured for this click; skipping replay action.`;
@@ -317,6 +317,13 @@ function generateClickStep(event, step) {
  * Generates code for filling a form input
  */
 function generateFormInputStep(event, step) {
+  if (!event.data) {
+    return `
+    // Step ${step}: Form input event missing payload data
+    // Skipped because no form data payload was captured
+`;
+  }
+
   const fieldName = event.data.name || event.data.id || 'field';
   const value = event.data.value || '';
   const locator = event.data.selector
@@ -372,10 +379,33 @@ function generateNetworkAssertion(event, step) {
 
 if (require.main === module) {
   const args = process.argv.slice(2);
-  const recordingFile = args.find(arg => !arg.startsWith('--'));
-  const splitByPhenomenon = args.includes('--split-by-phenomenon') || args.includes('--split');
-  const outputDirArg = args.find(arg => arg.startsWith('--output-dir='));
-  const outputDirFromArg = outputDirArg ? outputDirArg.split('=').slice(1).join('=').trim() : '';
+  let recordingFile = '';
+  let splitByPhenomenon = false;
+  let outputDirFromArg = '';
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--split-by-phenomenon' || arg === '--split') {
+      splitByPhenomenon = true;
+      continue;
+    }
+
+    if (arg.startsWith('--output-dir=')) {
+      outputDirFromArg = arg.substring(arg.indexOf('=') + 1).trim();
+      continue;
+    }
+
+    if (arg === '--output-dir' && args[i + 1] && !args[i + 1].startsWith('--')) {
+      outputDirFromArg = args[i + 1].trim();
+      i += 1;
+      continue;
+    }
+
+    if (!arg.startsWith('--') && !recordingFile) {
+      recordingFile = arg;
+    }
+  }
   
   if (!recordingFile) {
     console.error('❌ Error: Please provide a recording file');
