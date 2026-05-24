@@ -99,8 +99,6 @@ async function run() {
   const headlessArg = getArg('headless');
   if (headlessArg !== '') {
     headless = toBoolean(headlessArg, true);
-  } else if (hasFlag('headless')) {
-    headless = true;
   }
   if (toBoolean(process.env.HEADED, false) || hasFlag('headed')) {
     headless = false;
