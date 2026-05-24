@@ -20,6 +20,7 @@ npm run generate:playwright:auto
 This workflow:
 
 - logs in (default `/login`),
+- fails fast if authentication is not confirmed (unless explicitly overridden),
 - moves to dashboard (default `/dashboard`),
 - follows discovered internal links,
 - fills forms with dummy values and attempts submission,
@@ -39,6 +40,8 @@ This workflow:
 5. `npm run discover` (crawler fallback or inventory-backed discovery)
 6. `npm run generate:playwright:routes` (inventory-only generation)
 7. `npm run generate:playwright:auto` (automatic traversal + generation)
+8. `npm run generate:playwright:auto -- --singleRoute /dashboard` (single-route traversal)
+9. `npx playwright test --grep /dashboard` (run one route-focused test)
 
 ## Makefile entrypoints
 
@@ -47,12 +50,15 @@ For easier usage, the repository includes a `Makefile`:
 1. `make install`
 2. `make export-routes`
 3. `make auto` (recommended first run for automatic generation)
-4. `make generate-routes`
-5. `make discover`
-6. `make record`
-7. `make convert-playwright RECORDING=...`
-8. `make convert-phpunit RECORDING=...`
-9. `make playback RECORDING=...`
+4. `make auto-one ROUTE=/dashboard [ASSUME_AUTHENTICATED=true]`
+5. `make test`
+6. `make test-one ROUTE=/dashboard`
+7. `make generate-routes`
+8. `make discover`
+9. `make record`
+10. `make convert-playwright RECORDING=...`
+11. `make convert-phpunit RECORDING=...`
+12. `make playback RECORDING=...`
 
 ## Fallback mode
 
