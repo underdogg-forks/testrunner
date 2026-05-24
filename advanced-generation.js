@@ -124,9 +124,7 @@ function parseArgs() {
 
     const value = args[index];
 
-    if (value.startsWith(prefix)) {
-      return value.slice(prefix.length).trim();
-    }
+    if (value.startsWith(prefix)) return value.slice(prefix.length).trim();
 
     if (args[index + 1] && !args[index + 1].startsWith('--')) {
       return args[index + 1].trim();
@@ -144,7 +142,6 @@ async function run() {
   loadDotEnv(path.resolve('.env'));
 
   const logger = createTestRunnerLogger();
-
   const { getArg, hasFlag } = parseArgs();
 
   const baseUrl = (
@@ -202,8 +199,6 @@ async function run() {
     headless = false;
   }
 
-  const maxLinksPerPage = Number(process.env.MAX_LINKS_PER_PAGE || 250);
-
   const singleRouteInput =
       getArg('singleRoute') ||
       getArg('route') ||
@@ -213,19 +208,9 @@ async function run() {
 
   const singleRoute = resolveRouteUrl(baseUrl, singleRouteInput);
 
-  const assumeAuthenticated = toBoolean(
-      getArg('assumeAuthenticated') ||
-      process.env.ASSUME_AUTHENTICATED,
-      false
-  );
+  const routesFileFinal = routesFile;
 
-  const requireAuthConfirmation = toBoolean(
-      getArg('requireAuthConfirmation') ||
-      process.env.REQUIRE_AUTH_CONFIRMATION,
-      true
-  );
-
-  if (!routesFile.trim()) {
+  if (!routesFileFinal.trim()) {
     console.error('❌ Missing ROUTES_JSON / --routes');
     process.exit(1);
   }
@@ -256,8 +241,7 @@ async function run() {
     submitSelector
   });
 
-  const routes = discovery.loadLaravelRoutesFromJson(routesFile);
-
+  const routes = discovery.loadLaravelRoutesFromJson(routesFileFinal);
   const seeded = routes.map((r) => normalizeUrl(r.url)).filter(Boolean);
 
   const routeInventory = new Set(seeded);
@@ -271,7 +255,10 @@ async function run() {
   const queue = [...initialRoutes];
   const visited = new Set();
 
+  const startTime = new Date().toISOString();
   let browser;
+
+  let coveragePercent = 0;
 
   try {
     browser = await chromium.launch({ headless });
@@ -346,7 +333,7 @@ async function run() {
     const total = routeInventory.size;
     const matched = matchedRoutes.size;
 
-    const coveragePercent =
+    coveragePercent =
         total === 0 ? 0 : Math.round((matched / total) * 10000) / 100;
 
     const untouchedRoutes = [...routeInventory].filter(
@@ -364,30 +351,31 @@ async function run() {
         `session-${timestamp}.json`
     );
 
-    fs.writeFileSync(
-        recordingFile,
-        JSON.stringify(
-            {
-              visited: Array.from(visited),
-              matched: Array.from(matchedRoutes),
-              discovered: Array.from(discoveredRoutes)
-            },
-            null,
-            2
-        )
-    );
+    const recordingPayload = {
+      metadata: {
+        startTime,
+        endTime: new Date().toISOString(),
+        baseUrl
+      },
+      visited: Array.from(visited),
+      matched: Array.from(matchedRoutes),
+      discovered: Array.from(discoveredRoutes)
+    };
 
-    const specOut = path.join(
-        testsDir,
-        `generated-${timestamp}.spec.js`
-    );
+    fs.writeFileSync(recordingFile, JSON.stringify(recordingPayload, null, 2));
 
-    convertToPlaywright(recordingFile, specOut);
+    const specOut = path.join(testsDir, `generated-${timestamp}.spec.js`);
 
-    const coverageFile = path.join(
-        logDir,
-        `coverage-${timestamp}.json`
-    );
+    try {
+      convertToPlaywright(recordingFile, specOut);
+    } catch (error) {
+      logger.error('Conversion failure', {
+        message: error?.message,
+        stack: error?.stack
+      });
+    }
+
+    const coverageFile = path.join(logDir, `coverage-${timestamp}.json`);
 
     fs.writeFileSync(
         coverageFile,
@@ -404,12 +392,32 @@ async function run() {
         )
     );
 
+    const todoFile = path.resolve('todo.txt');
+
+    const todoContent = [
+      '# Route Coverage Summary',
+      '',
+      `Coverage: ${coveragePercent}%`,
+      '',
+      '# Untouched routes',
+      '',
+      ...(untouchedRoutes.length
+          ? untouchedRoutes.map((r) => `- [ ] ${r}`)
+          : ['All routes covered']),
+      '',
+      '# Extra routes discovered',
+      '',
+      ...(extraRoutes.length
+          ? extraRoutes.map((r) => `- [ ] ${r}`)
+          : ['No extra routes'])
+    ].join('\n');
+
+    fs.writeFileSync(todoFile, todoContent);
+
     log(`Generated: ${specOut}`);
     log(`Coverage: ${coveragePercent}% (${matched}/${total})`);
 
-    console.log(
-        `\n📊 Route Coverage: ${coveragePercent}% (${matched}/${total})\n`
-    );
+    console.log(`\n📊 Route Coverage: ${coveragePercent}% (${matched}/${total})\n`);
   } catch (error) {
     logger.error('Fatal error', {
       message: error?.message,
