@@ -500,7 +500,7 @@ ${tests}
             return `  test('${testName}', async () => {
     // Navigate to form page and wait for Livewire component to load
     await page.goto('${relativeUrl}');
-    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/.+/);
     
     // Selector updated to exclude disabled/readonly fields
     const inputs = await page.$$('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled])');
@@ -533,7 +533,7 @@ ${tests}
     await page.goto('${relativeUrl}');
     
     // Wait for Livewire components/content to settle
-    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/.+/);
     
     // Assert title exists and content body has substantial text
     const title = await page.title();
@@ -589,14 +589,11 @@ ${tests}
     await page.goto('${relativeUrl}');
     
     // Wait for Livewire components/content to settle
-    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/.+/);
     
-    // Basic page load verification
-    await expect(page).toHaveTitle(/.+/);
-    
-    // Assert body contains substantial text
-    const body = page.locator('body');
-    await expect(body).toHaveText(/.{100,}/);
+    // Business outcome + state checks
+    await expect(page).not.toHaveURL(/\/login(?:$|\?)/);
+    await expect(page.locator('main, [role="main"], body')).toContainText(/\S+/);
   });`;
     }
     

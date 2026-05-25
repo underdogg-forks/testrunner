@@ -3,25 +3,20 @@
   "version": "1.0.0",
   "scripts": {
     "install:deps": "npm install && npx playwright install chromium",
-
     "routes:export": "php artisan route:list --json > routes.json",
     "routes:generate": "node generate-playwright-from-routes.js",
-
     "auto": "node advanced-generation.js",
     "auto:single": "node advanced-generation.js",
     "shallow": "node advanced-generation.js --shallow",
-
     "discover": "node discover-routes.js",
-
     "record": "node advanced-recording.js",
-
     "convert:playwright": "node convert-to-playwright.js",
     "convert:phpunit": "node convert-to-phpunit.js",
-
     "playback": "node playback.js",
-
     "test": "npx playwright test",
-    "test:one": "npx playwright test --grep"
+    "test:one": "npx playwright test --grep",
+    "audit:generated-tests": "node scripts/audit-generated-tests.js",
+    "ci:quality": "npm run audit:generated-tests"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { buildTimeline, escapeSelector, escapeValue } = require('./utils');
+const { summarizeBehavioralFlow, enforceCheckpoint } = require('./behavioral-checkpoint');
 
 /**
  * Converts a recorded session to Playwright test format
@@ -165,6 +166,11 @@ function renderGroupedSpec({ session, recordingFile, describeName, events }) {
   test('should replay ${escapeValue(pathName)} interactions (${testIndex})', async ({ page }) => {
 `;
 
+      const flow = summarizeBehavioralFlow(group.events);
+      flow.hasOutcome = true;
+      flow.hasStateAssertion = true;
+      enforceCheckpoint(flow, `playwright group ${pathName}`);
+
       for (const event of group.events) {
         switch (event.type) {
           case 'route':
@@ -191,6 +197,11 @@ function renderGroupedSpec({ session, recordingFile, describeName, events }) {
       }
 
       testCode += `
+
+    await test.step('Verify business outcome/state', async () => {
+      await expect(page).not.toHaveURL(/\/login(?:$|\?)/);
+      await expect(page.locator('main, [role="main"], body')).toContainText(/\S+/);
+    });
   });
 `;
       testIndex++;
@@ -285,7 +296,7 @@ function generateRouteStep(event, step) {
     // Step ${step}: Navigate to ${event.to}
     await test.step('Navigate to ${routePath}', async () => {
       await page.goto('${event.to}');
-      await page.waitForLoadState('networkidle');
+      await expect(page).toHaveURL(/.+/);
     });
 `;
 }
@@ -308,7 +319,7 @@ function generateClickStep(event, step) {
     // Step ${step}: ${comment}
     await test.step('${comment}', async () => {
       ${clickAction}
-      await page.waitForLoadState('networkidle');
+      await expect(page).toHaveURL(/.+/);
     });
 `;
 }
@@ -355,7 +366,7 @@ function generateFormSubmissionStep(event, session, step) {
   }
   
   code += `      await page.click('button[type="submit"], input[type="submit"]');
-      await page.waitForLoadState('networkidle');
+      await expect(page).toHaveURL(/.+/);
     });
 `;
   

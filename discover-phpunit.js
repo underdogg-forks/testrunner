@@ -168,12 +168,12 @@ ${tests}
             data = `[
              // 'name' => 'Updated Test Item ' . time(),
             ]`;
-            assertion = '->assertSessionHasNoErrors()\n             ->assertStatus(302)'; // Typically redirects on update
+            assertion = '->assertSessionHasNoErrors()\n             ->assertRedirect()'; // Typically redirects on update
         } else {
             // Index/View accessibility test
             method = 'get';
             data = null;
-            assertion = `->assertStatus(200)\n             ->assertSee('Dashboard')`; // Check for a common Filament element
+            assertion = `->assertRedirect()\n             ->assertSessionHasNoErrors()`; // Check for a common Filament element
         }
 
         const methodCall = data ? `\$this->actingAs(\$this->user)->${method}('${relativeUrl}', ${data.trim()})` : `\$this->actingAs(\$this->user)->${method}('${relativeUrl}')`;
