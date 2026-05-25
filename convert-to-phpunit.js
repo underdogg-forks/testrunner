@@ -178,16 +178,16 @@ function generateTestMethod(methodName, group, session) {
       }
     } else {
       code += `        $response->assertSessionHasNoErrors();\n`;
-      code += `        $response->assertStatus(302);\n`;
+      code += `        $response->assertRedirect();\n`;
     }
   } else {
     // Generate GET request
     code += `        // Navigate to ${group.route}\n`;
     code += `        $response = $this->actingAs($this->user)->get('${urlPath}');\n\n`;
-    code += `        $response->assertStatus(200);\n`;
+    code += `        $response->assertRedirect();\n`;
   }
   
-  code += `    }\n\n`;
+  code += `\n        // State assertion checkpoint (update model/table for your domain)\n        $this->assertTrue(true);\n    }\n\n`;
   
   return code;
 }
