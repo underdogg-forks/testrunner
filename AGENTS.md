@@ -114,3 +114,50 @@ make test              # 5 — run generated Playwright tests
 - Test your changes with `make auto-one ROUTE=/dashboard HEADED=true` against a real app
 - The `test-results/` directory is gitignored; it is created by Playwright at test time
 - Do not introduce new dependencies without a clear reason — the project intentionally has minimal deps
+
+---
+
+## Behavioral test quality policy (critical)
+
+This repository is used to generate Playwright/PHPUnit tests for external Laravel apps. Generated output must optimize for **behavioral confidence**, not route coverage volume.
+
+### Mandatory workflow assertions
+For generated Playwright tests, require:
+1. Navigate to scenario entry point
+2. Perform meaningful user action
+3. Trigger state transition
+4. Assert business outcome
+5. Assert resulting application/domain state
+
+For generated PHPUnit tests, require:
+1. Arrange realistic fixtures/state
+2. Execute meaningful HTTP/domain action
+3. Assert behavioral response (validation/authz/redirect)
+4. Assert persisted or session/domain mutation
+
+### Prohibited weak-test output
+Do not generate tests that only prove:
+- route availability or status 200
+- selector, button, or link visibility
+- static page rendering
+- raw network success (`response.ok()` etc.)
+- DOM/CSS structure or framework internals
+
+If UI visibility checks are present, they must be paired with outcome/state verification.
+
+### Refactor expectations
+When refactoring generated tests:
+- remove weak assertions
+- replace replay-only flows with complete business workflows
+- reduce brittle selector coupling where possible
+- keep scenarios explicit (avoid opaque loop-generated tests)
+
+### Required self-audit for generation/refactor tasks
+After each generated/refactored file, provide:
+- Completed behavioral improvements
+- Weak assertions removed
+- Remaining weaknesses
+- Structural coupling remaining
+- TODO remediation gaps
+
+Never mark work complete if behavioral gaps remain.
