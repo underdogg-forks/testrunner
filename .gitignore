@@ -29,6 +29,7 @@ tmp/
 /analysis.md
 /routes.json
 /schema.json
+/skipped.json
 /testresults.txt
 /todo.json
 /todo.txt

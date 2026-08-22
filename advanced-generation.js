@@ -100,6 +100,139 @@ function isParameterizedRoute(url) {
   return url.includes('{') || url.includes('}') || /\/:[^/]+/.test(url);
 }
 
+// Routes that are real, working pages but can't be scanned yet because they
+// require a value (a signed token, a completed job id) that can only come
+// from actually triggering the underlying flow (sending an email, running an
+// export). Classified separately from generic parameterized/asset routes so
+// they show up in reports as known coverage gaps, not silent noise.
+const INCOMPLETE_ROUTES = [
+  { pattern: /\/password-reset\/(request|reset)$/, note: 'password-reset form — no fixture yet to drive the real reset flow' },
+  { pattern: /\/email-verification\/verify\/\{id\}\/\{hash\}$/, note: 'requires a real signed email-verification token; not fabricable without sending the actual email' },
+  { pattern: /\/email-change-verification\/verify\/\{id\}\/\{email\}(\/block)?$/, note: 'requires a real signed email-change-verification token; not fabricable without sending the actual email' },
+  { pattern: /\/filament\/(exports\/\{export\}\/download|imports\/\{import\}\/failed-rows\/download)$/, note: 'requires a real export/import job id from an actually-completed job' },
+];
+
+function matchIncompleteRoute(url) {
+  return INCOMPLETE_ROUTES.find(({ pattern }) => pattern.test(url)) || null;
+}
+
+// Global chrome (sidebar/topbar/theme/user-menu) is never what "add" or
+// "date picker" coverage means here — excluded so the sweep only touches
+// controls that belong to the page's own content.
+const CHROME_SELECTOR = '.fi-sidebar, .fi-topbar, .fi-user-menu-trigger, .fi-theme-switcher-btn';
+
+/**
+ * Best-effort discovery + exercise of "add row"/"+" buttons and date/time
+ * pickers on the current page. Only clicks buttons with type != "submit" so
+ * it never triggers a real form submission — Filament repeater/relation
+ * "add" actions are client-side `wire:click="mountAction(...)"` buttons that
+ * mutate in-memory form state, not persisted records. Never throws; any
+ * failure is recorded as a result, not propagated to the caller.
+ */
+async function sweepInteractiveElements(page, routeUrl, log) {
+  const results = [];
+  const consoleErrors = [];
+  const onConsole = (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); };
+  const onPageError = (err) => consoleErrors.push(err.message);
+  page.on('console', onConsole);
+  page.on('pageerror', onPageError);
+
+  try {
+    let dateInputs = [];
+    try {
+      dateInputs = await page.locator('input[type="date"], input[type="datetime-local"], input[type="time"]').all();
+    } catch { /* page may have navigated away mid-evaluation */ }
+
+    for (let i = 0; i < dateInputs.length; i++) {
+      const input = dateInputs[i];
+      const before = consoleErrors.length;
+      try {
+        if (!(await input.isVisible())) continue;
+        const type = await input.getAttribute('type');
+        const value = type === 'time' ? '09:00' : type === 'datetime-local' ? '2026-01-01T09:00' : '2026-01-01';
+        await input.fill(value);
+        await input.evaluate(el => el.blur());
+        await page.waitForTimeout(150);
+        const actual = await input.inputValue();
+        const ok = actual === value && consoleErrors.length === before;
+        results.push({
+          url: routeUrl, kind: 'date_input', index: i, ok,
+          detail: ok ? null : `expected "${value}", got "${actual}"`,
+        });
+      } catch (err) {
+        results.push({ url: routeUrl, kind: 'date_input', index: i, ok: false, detail: err.message });
+      }
+    }
+
+    let buttonHandles = [];
+    try {
+      buttonHandles = await page.$$('button');
+    } catch { /* page may have navigated away mid-evaluation */ }
+
+    for (const handle of buttonHandles) {
+      let info;
+      try {
+        info = await handle.evaluate((el, chromeSelector) => {
+          const text = (el.innerText || '').trim();
+          const aria = el.getAttribute('aria-label') || '';
+          const title = el.getAttribute('title') || '';
+          const type = el.getAttribute('type') || '';
+          const chrome = !!el.closest(chromeSelector);
+          const rect = el.getBoundingClientRect();
+          const visible = rect.width > 0 && rect.height > 0 && getComputedStyle(el).visibility !== 'hidden';
+          return { text, aria, title, type, chrome, visible, disabled: el.disabled };
+        }, CHROME_SELECTOR);
+      } catch {
+        await handle.dispose();
+        continue;
+      }
+
+      const label = `${info.text} ${info.aria} ${info.title}`.trim();
+      const isAddLike = /\badd\b/i.test(label) || label === '+';
+
+      if (!isAddLike || info.chrome || info.type === 'submit' || !info.visible || info.disabled) {
+        await handle.dispose();
+        continue;
+      }
+
+      // Accessible name precedence roughly matches the browser algorithm:
+      // aria-label wins, then title, then visible text — used both to log a
+      // readable label and, at spec-generation time, to re-locate this same
+      // button by role+name.
+      const accessibleName = (info.aria || info.title || info.text).trim();
+
+      const before = consoleErrors.length;
+      try {
+        await handle.click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const livewireErrorOpen = await page.locator('dialog#livewire-error[open]').count().catch(() => 0);
+        const ok = consoleErrors.length === before && livewireErrorOpen === 0;
+        results.push({
+          url: routeUrl, kind: 'add_button', label: label.slice(0, 60), accessibleName: accessibleName.slice(0, 80), ok,
+          detail: ok ? null : 'console/page error or Livewire error dialog after click',
+        });
+      } catch (err) {
+        results.push({ url: routeUrl, kind: 'add_button', label: label.slice(0, 60), accessibleName: accessibleName.slice(0, 80), ok: false, detail: err.message });
+      } finally {
+        await handle.dispose();
+      }
+    }
+  } finally {
+    page.off('console', onConsole);
+    page.off('pageerror', onPageError);
+  }
+
+  if (results.length) {
+    log('INFO', `interactions ${routeUrl}`, {
+      checked: results.length,
+      ok: results.filter(r => r.ok).length,
+      failed: results.filter(r => !r.ok).length,
+    });
+  }
+
+  return results;
+}
+
 function sanitizeFilename(input) {
   return input.replace(/[^a-z0-9_-]/gi, '_').replace(/_+/g, '_').slice(0, 140);
 }
@@ -223,6 +356,7 @@ function createRunModel(config) {
     skippedRoutes: [],
     nonScannedRoutes: [],
     discoveredRoutes: [],
+    interactions: [],
     artifacts: [],
     summary: {
       scanned: 0,
@@ -231,6 +365,9 @@ function createRunModel(config) {
       nonScanned: 0,
       discovered: 0,
       coverage: 0,
+      interactionsChecked: 0,
+      interactionsOk: 0,
+      interactionsFailed: 0,
     },
   };
 }
@@ -341,7 +478,91 @@ function toScanSession(runModel) {
   };
 }
 
-function writeRunOutputs(runModel, log) {
+/**
+ * Turns discovered "+"/add-row buttons and date/time pickers into a real,
+ * persisted Playwright spec: each test independently logs in, navigates to
+ * the route the control was found on, re-locates it (by role+accessible-name
+ * for buttons, by type+index for date inputs), and re-exercises it. This is
+ * regression coverage for future runs, not a snapshot of today's result.
+ */
+function generateInteractionsSpec(runModel, config, stamp) {
+  if (!runModel.interactions.length) return null;
+
+  const esc = (value) => JSON.stringify(String(value));
+
+  const byUrl = new Map();
+  for (const item of runModel.interactions) {
+    if (!byUrl.has(item.url)) byUrl.set(item.url, []);
+    byUrl.get(item.url).push(item);
+  }
+
+  const loginAbsolute = toAbsoluteUrl(config.baseUrl, config.loginUrl) || config.baseUrl;
+
+  const describeBlocks = [...byUrl.entries()].map(([url, items]) => {
+    const tests = items.map((item) => {
+      if (item.kind === 'date_input') {
+        return `
+  test(${esc(`date input #${item.index} accepts a value`)}, async ({ page }) => {
+    await page.goto(${esc(url)});
+    const input = page.locator('input[type="date"], input[type="datetime-local"], input[type="time"]').nth(${item.index});
+    await expect(input).toBeVisible();
+    const type = await input.getAttribute('type');
+    const value = type === 'time' ? '09:00' : type === 'datetime-local' ? '2026-01-01T09:00' : '2026-01-01';
+    await input.fill(value);
+    await expect(input).toHaveValue(value);
+  });`;
+      }
+
+      return `
+  test(${esc(`"${item.accessibleName || 'unnamed'}" button works without error`)}, async ({ page }) => {
+    const consoleErrors = [];
+    page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+    page.on('pageerror', err => consoleErrors.push(err.message));
+    await page.goto(${esc(url)});
+    const button = page.getByRole('button', { name: ${esc(item.accessibleName)} }).first();
+    await expect(button).toBeVisible();
+    await button.click();
+    await page.waitForTimeout(400);
+    await expect(page.locator('dialog#livewire-error[open]')).toHaveCount(0);
+    expect(consoleErrors, consoleErrors.join('\\n')).toHaveLength(0);
+  });`;
+    }).join('\n');
+
+    return `
+test.describe(${esc(url)}, () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(${esc(loginAbsolute)});
+    if (!page.url().includes(${esc(config.loginUrl)})) return;
+    await page.fill('input[name="email"], input[type="email"], input#email', ${esc(config.email)});
+    await page.fill('input[name="password"], input[type="password"], input#password', ${esc(config.password)});
+    await Promise.all([
+      // 60s, not 30s: every PHP request here pays Xdebug step-debug
+      // connection overhead, and this beforeEach runs once per test.
+      page.waitForURL(u => !String(u).includes(${esc(config.loginUrl)}), { timeout: 60000 }),
+      page.click('button[type="submit"], input[type="submit"], button:has-text("Login")'),
+    ]);
+  });
+${tests}
+});`;
+  }).join('\n');
+
+  const contents = `/**
+ * Auto-generated interaction coverage — "+"/add-row buttons and date/time
+ * pickers discovered by \`make auto\` with CRAWL_INTERACTIONS=true.
+ * Generated: ${new Date().toISOString()}
+ * Source scan: run-report-${stamp}.json
+ */
+import { test, expect } from '@playwright/test';
+${describeBlocks}
+`;
+
+  const file = path.join(TESTS_DIR, `interactions-${stamp}.spec.js`);
+  ensureDir(TESTS_DIR);
+  fs.writeFileSync(file, contents);
+  return file;
+}
+
+function writeRunOutputs(runModel, log, config) {
   ensureDir(LOG_DIR);
   ensureDir(RECORDINGS_DIR);
 
@@ -401,6 +622,16 @@ function writeRunOutputs(runModel, log) {
     log('ERROR', 'playwright generation failed (scan report preserved)', { message: error.message });
   }
 
+  let interactionsSpecFile = null;
+  try {
+    interactionsSpecFile = generateInteractionsSpec(runModel, config, stamp);
+    if (interactionsSpecFile) {
+      log('INFO', `generated interactions spec -> ${interactionsSpecFile}`);
+    }
+  } catch (error) {
+    log('ERROR', 'interactions spec generation failed (scan report preserved)', { message: error.message });
+  }
+
   return {
     reportFile,
     latestReportFile,
@@ -408,6 +639,7 @@ function writeRunOutputs(runModel, log) {
     scanSessionFile,
     generatedSpecFile: generatedSpecFiles[0] || generatedSpecFile,
     generatedSpecFiles,
+    interactionsSpecFile,
   };
 }
 
@@ -444,6 +676,7 @@ async function run() {
   const traceEnabled = readFlag(get, has, 'trace', 'TRACE', !!process.env.CI);
   const assumeAuthenticated = readFlag(get, has, 'assume-authenticated', 'ASSUME_AUTHENTICATED', false);
   const requireAuthConfirmation = readFlag(get, has, 'require-auth-confirmation', 'REQUIRE_AUTH_CONFIRMATION', true);
+  const crawlInteractions = readFlag(get, has, 'interactions', 'CRAWL_INTERACTIONS', false);
 
   ensureDir(LOG_DIR);
   const log = createLogger(path.join(LOG_DIR, 'testrunner.log'));
@@ -495,6 +728,7 @@ async function run() {
     traceEnabled,
     assumeAuthenticated,
     requireAuthConfirmation,
+    crawlInteractions,
   };
 
   const runModel = createRunModel(config);
@@ -633,6 +867,19 @@ async function run() {
         continue;
       }
 
+      const incompleteRoute = matchIncompleteRoute(routeUrl);
+      if (incompleteRoute) {
+        skippedSet.add(routeUrl);
+        runModel.skippedRoutes.push({
+          url: routeUrl,
+          reason: 'incomplete',
+          note: incompleteRoute.note,
+          source,
+          timestamp: new Date().toISOString(),
+        });
+        continue;
+      }
+
       if (shouldSkipRoute(routeUrl)) {
         skippedSet.add(routeUrl);
         runModel.skippedRoutes.push({
@@ -703,12 +950,19 @@ async function run() {
           }
         }
 
+        let interactionResults = [];
+        if (config.crawlInteractions) {
+          interactionResults = await sweepInteractiveElements(page, routeUrl, log);
+          runModel.interactions.push(...interactionResults);
+        }
+
         runModel.scannedRoutes.push({
           url: routeUrl,
           source,
           status,
           durationMs: Date.now() - started,
           discoveredLinks: newlyQueued.length,
+          interactionsChecked: interactionResults.length,
           timestamp: new Date().toISOString(),
         });
 
@@ -812,12 +1066,15 @@ async function run() {
   runModel.summary.coverage = inventorySet.size === 0
     ? 100
     : Math.round(((inventorySet.size - runModel.summary.nonScanned) / inventorySet.size) * 100);
+  runModel.summary.interactionsChecked = runModel.interactions.length;
+  runModel.summary.interactionsOk = runModel.interactions.filter(i => i.ok).length;
+  runModel.summary.interactionsFailed = runModel.interactions.filter(i => !i.ok).length;
 
   runModel.metadata.endedAt = new Date().toISOString();
   runModel.metadata.durationMs = Date.now() - new Date(runModel.metadata.startedAt).getTime();
   const skippedRoutesFile = writeSkippedRoutesFile(skippedFile, [...persistedSkippedSet], log);
 
-  const outputs = writeRunOutputs(runModel, log);
+  const outputs = writeRunOutputs(runModel, log, config);
 
   log('INFO', 'scan summary', runModel.summary);
   log('INFO', `report  -> ${outputs.latestReportFile}`);
@@ -828,6 +1085,9 @@ async function run() {
   }
   log('INFO', `todo    -> ${outputs.todoFile}`);
   log('INFO', `skipped -> ${skippedRoutesFile}`);
+  if (outputs.interactionsSpecFile) {
+    log('INFO', `interactions spec -> ${outputs.interactionsSpecFile}`);
+  }
 
   console.log('\nNext steps:');
   console.log(`  Run tests:          make test`);
