@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help install export-routes routes generate-routes auto shallow auto-one scan-todo test test-one discover record convert-playwright convert-phpunit playback clear
+.PHONY: help install export-routes routes generate-routes auto shallow auto-one scan-todo test test-one discover record convert-playwright convert-phpunit playback clear export-schema find-form-gaps
 
 ENV_FILE ?= .env
 
@@ -30,6 +30,10 @@ help:
 	@echo "  make convert-phpunit    RECORDING=file     convert recording to PHPUnit test"
 	@echo "  make playback           RECORDING=file     replay a recording"
 	@echo
+	@echo "mind-the-gap (form/DB constraint audit):"
+	@echo "  make export-schema                         php artisan mind-the-gap:export-schema -> schema.json"
+	@echo "  make find-form-gaps                         export-schema, then run the frontend DOM/DB audit"
+	@echo
 	@echo "Maintenance:"
 	@echo "  make clear                                 delete old logs and trace files"
 	@echo
@@ -39,6 +43,7 @@ help:
 	@echo "  SCREENSHOT_ON_ERROR=true"
 	@echo "  TRACE=true"
 	@echo "  ROUTE_PARAMS={\"external_id\":\"abc-123\"}"
+	@echo "  CRAWL_INTERACTIONS=true  (make auto only) scan +/add-row buttons and date pickers on every page, adds real time per page"
 	@echo
 
 install:
@@ -71,6 +76,7 @@ auto:
 	TRACE=$(TRACE) \
 	SKIPPED_JSON=$(SKIPPED_JSON) \
 	ROUTE_PARAMS=$(ROUTE_PARAMS) \
+	CRAWL_INTERACTIONS=$(CRAWL_INTERACTIONS) \
 	npm run auto
 
 shallow:
@@ -150,6 +156,18 @@ convert-phpunit:
 playback:
 	@test -n "$(RECORDING)" || (echo "Usage: make playback RECORDING=recordings/session-....json" && exit 1)
 	npm run playback $(RECORDING)
+
+export-schema:
+	docker exec -e XDEBUG_MODE=off $(DOCKER_CONTAINER) sh -c "cd $(DOCKER_APP_PATH) && php artisan mind-the-gap:export-schema" > $(SCHEMA_JSON)
+
+find-form-gaps: export-schema
+	APP_URL=$(APP_URL) \
+	E2E_EMAIL=$(E2E_EMAIL) \
+	E2E_PASSWORD=$(E2E_PASSWORD) \
+	TENANT_SLUG=$(TENANT_SLUG) \
+	SCHEMA_JSON=$(SCHEMA_JSON) \
+	HEADLESS=$(HEADLESS) \
+	npx playwright test --config=playwright.gaps.config.js
 
 clear:
 	@echo "Clearing logs and zip artifacts..."

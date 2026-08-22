@@ -248,6 +248,21 @@ The scanner will substitute these values and visit the resolved URLs.
 
 ---
 
+## Form/DB constraint audit (mind-the-gap)
+
+```bash
+make find-form-gaps
+```
+
+Exports the Laravel app's real DB column/index constraints
+(`php artisan mind-the-gap:export-schema` → `schema.json`), then crawls
+every Filament resource's create form and checks the actually-rendered
+HTML (`required`, `maxlength`) against them. This is a permanent
+regression check, not a one-time report — run it after any migration or
+form change. See the `mind-the-gap` skill for the full methodology.
+
+---
+
 ## Cleanup
 
 ```bash

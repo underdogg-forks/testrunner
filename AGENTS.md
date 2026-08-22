@@ -28,6 +28,7 @@ convert-to-phpunit.js        Converts a recording JSON → PHPUnit feature test
 discover-routes.js           RouteDiscovery class — crawl, grouping, spec templates
 discover-phpunit.js          Variant of RouteDiscovery that generates PHPUnit tests
 generate-playwright-from-routes.js  Routes JSON → Playwright specs (no browser needed)
+find-form-gaps.js            mind-the-gap frontend audit: DOM field constraints vs schema.json
 playback.js                  Replays a recorded session in a browser
 record-routes.js             Legacy minimal click recorder (not used by make targets)
 utils.js                     Shared helpers: sortRoutes, buildTimeline, escape helpers
@@ -104,8 +105,28 @@ make test              # 5 — run generated Playwright tests
 | `todo.json` | Routes not yet scanned |
 | `skipped.json` | Persisted skipped routes |
 | `todo.txt` | Human-readable todo list |
+| `schema.json` | mind-the-gap: DB column/index constraints per Filament resource, from `make export-schema` |
 
 ---
+
+## mind-the-gap: form/DB constraint audit
+
+`find-form-gaps.js` + `form-db-gaps.spec.js` are a permanent regression
+gate, not a discovery/generation script like the rest of this tool — they
+crawl real rendered forms and assert their DOM `required`/`maxlength`
+attributes match the real DB column constraints exported by the Laravel
+app's `php artisan mind-the-gap:export-schema` (`make export-schema` →
+`schema.json`). Run both together with `make find-form-gaps`.
+
+`form-db-gaps.spec.js` deliberately lives at the project root, not inside
+`tests-playwright/` — that directory is blanket-gitignored (disposable
+scan/generation output) and this spec is a permanent, committed regression
+test. `make find-form-gaps` invokes it by explicit path, which Playwright
+honors regardless of `testDir`.
+
+See the `mind-the-gap` skill (`~/.claude/skills/mind-the-gap/SKILL.md`) for
+the full methodology and how to port this to a non-Filament/non-Laravel
+app.
 
 ## When modifying this project
 
