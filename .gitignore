@@ -4,6 +4,7 @@ package-lock.json
 
 # Recordings and generated files
 recordings/
+prompts/
 storage/
 tests/
 test-results/
